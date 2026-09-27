@@ -1,125 +1,204 @@
 # Gram-MQ Constitution
 
 <!--
-Sync Impact Report (временная заметка для ревью — удалить перед коммитом)
-- Version change: 2.0.2 → 2.1.0 (MINOR: норма ужесточена — с «один раз
-  в ответе POST» до «никогда через HTTP»; принцип не переопределён,
-  поэтому не MAJOR)
-- Modified principles:
-  - III — plaintext API-ключа больше не выдаётся в HTTP-ответе на создание:
-    выпуск только CLI на сервере с печатью один раз в терминале;
-    эндпоинты возвращают лишь prefix + key_hash
-- Unchanged by design: принцип II (at-least-once) — постфактум-проверка
-  доставки через Bot API невозможна; сужение неопределённости (статус
-  sending, лог tg_accepted, реконсилятор) — материал spec/plan воркера
-- Added sections: нет
-- Removed sections: нет
-- Deferred TODOs: выпуск ключа CLI, страница ключей без POST-выдачи и
-  механизмы реконсиляции — в будущие spec фич ($speckit-specify)
+Sync Impact Report (temporary note for review — remove before committing)
+- Version change: 2.1.0 → 2.2.0 (MINOR: five engineering MUST standards
+  added. The whole amendment is still uncommitted, so the translation and
+  the artifact-language rule fold into the same bump)
+- Modified principles: none in substance (I–IV unchanged; the document is
+  translated from Russian to English, titles re-worded in English)
+- Added sections: "Engineering Standards" — Asynchrony, Type checking,
+  Database migrations, Testing, Dependency licenses, Stack and
+  deployment (v1)
+- Added norms (Governance): the constitution and all Spec Kit artifacts
+  (specs, plans, tasks, checklists) are written in English
+- Removed sections: draft "Invariants" section, "Technical constraints
+  (v1)" and "Test requirements" — merged without semantic change into
+  "Engineering Standards" (the alembic upgrade head line moved to
+  "Database migrations", test environment rules to "Testing")
+- Minor edits: Governance gained the equal-force rule for principles and
+  standards; gate wording changed from "MUST-principle" to "MUST-norm";
+  the dev-tools line extended with mypy --strict and coverage
+- Deferred TODOs: the repo LICENSE is GPL-3.0. The dependency-licenses
+  standard (MIT-compatible dependencies) is compatible with this, but if
+  the project is to be distributed under MIT, the LICENSE file must be
+  replaced in a separate commit — outside the constitution's scope
 -->
 
 ## Core Principles
 
-### I. Порты и адаптеры, а не конкретные технологии
+### I. Ports and adapters, not specific technologies
 
-Домен (API, worker, дашборд) зависит только от портов: `BrokerPort`,
-`TelegramSender`, `AuthProvider`, `BotConfig`. Какая реализация под ними —
-`PostgresBroker`, `RabbitBroker`, in-memory, aiogram, fake — домену неизвестно.
+The domain (API, worker, dashboard) depends only on ports: `BrokerPort`,
+`TelegramSender`, `AuthProvider`, `BotConfig`. Which implementation sits
+behind them — `PostgresBroker`, `RabbitBroker`, in-memory, aiogram, fake —
+is unknown to the domain.
 
-- `BrokerPort` — доменный контракт (`enqueue` / `claim` / `ack` / `retry` /
-  `dead_letter` / `queue_depth`), не AMQP. Новые методы порта появляются
-  только когда нужны конкретному адаптеру (пример: `ensure_bot_queue`
-  для RabbitMQ).
-- `Delivery` — непрозрачный handle адаптера; домен его не разбирает.
-- Новый адаптер добавляется только через спецификацию Spec Kit
-  (spec → plan → tasks), а не «по ходу задач».
+- `BrokerPort` is a domain contract (`enqueue` / `claim` / `ack` /
+  `retry` / `dead_letter` / `queue_depth`), not AMQP. New port methods
+  appear only when a concrete adapter needs them (example:
+  `ensure_bot_queue` for RabbitMQ).
+- `Delivery` is an opaque adapter handle; the domain never inspects it.
+- A new adapter is added only through a Spec Kit specification
+  (spec → plan → tasks), never "along the way".
 
-Обоснование: смена брокера, провайдера входа или Telegram-клиента — это новый
-адаптер, а не переписывание FastAPI, worker и дашборда.
+Rationale: switching the broker, the login provider, or the Telegram
+client is a new adapter, not a rewrite of FastAPI, the worker, and the
+dashboard.
 
-### II. Сообщение не теряется — доставка at-least-once (NON-NEGOTIABLE)
+### II. No message is lost — at-least-once delivery (NON-NEGOTIABLE)
 
-Каждое принятое сообщение обязано пережить падение любого процесса.
+Every accepted message must survive the crash of any process.
 
-- Лиз (`lease_expires_at`) и счётчик `attempts` обязательны; «надеемся на
-  systemd» запрещено. Падение worker не теряет строки: они остаются `queued`
-  или снова доступны после истечения лиза.
-- Ack атомарен: `telegram_message_id` и `status=sent` пишутся в одной
-  транзакции сразу после успешного ответа Telegram.
-- Доставка at-least-once, не exactly-once: дубль в чат при разрыве между send
-  и commit допустим и документирован. Это свойство контракта, не дефект схемы.
-- Retry (429, сеть) — `available_at = now() + backoff`, `attempts += 1`;
-  после `max_attempts` — `failed` (аналог DLQ).
-- API и worker — разные процессы: HTTP-запрос никогда не ждёт Telegram.
-  Лимиты Telegram живут в worker, не в брокере.
+- The lease (`lease_expires_at`) and the `attempts` counter are mandatory;
+  "relying on systemd" is forbidden. A worker crash loses no rows: they
+  stay `queued` or become claimable again after the lease expires.
+- Ack is atomic: `telegram_message_id` and `status=sent` are written in a
+  single transaction immediately after a successful Telegram response.
+- Delivery is at-least-once, not exactly-once: a duplicate in the chat
+  after a break between send and commit is acceptable and documented.
+  This is a contract property, not a schema defect.
+- Retry (429, network) — `available_at = now() + backoff`,
+  `attempts += 1`; after `max_attempts` — `failed` (a DLQ analogue).
+- API and worker are separate processes: an HTTP request never waits for
+  Telegram. Telegram rate limits live in the worker, not in the broker.
 
-### III. Plaintext-секрета в системе нет
+### III. No plaintext secrets in the system
 
-- В БД секретов нет — только хэши: API-ключи и пароли — Argon2id, OTP и
-  refresh — HMAC-SHA256.
-- Токен бота хранится только в `bots/.env-<bot_slug>` на диске; никогда —
-  в SQL, в ответах API или дашборда. Нет файла — сообщения этим ботом
-  не отправляются.
-- Plaintext API-ключа никогда не пересекает HTTP: ключ выпускается только
-  CLI на сервере и печатается один раз в терминале. Эндпоинты API и
-  дашборда возвращают лишь `prefix` + `key_hash`. Отзыв — `revoked_at`;
-  ротация — новый ключ плюс revoke старого.
-- Access-токен — в httpOnly cookie, не в localStorage. OTP не логируется.
-- Каталог `bots/` не коммитится (`.gitignore`).
+- There are no secrets in the DB — only hashes: API keys and passwords —
+  Argon2id; OTP and refresh tokens — HMAC-SHA256.
+- The bot token is stored only in `bots/.env-<bot_slug>` on disk; never
+  in SQL, API responses, or the dashboard. No file — no messages are sent
+  by that bot.
+- A plaintext API key never crosses HTTP: the key is issued only by a CLI
+  on the server and printed to the terminal once. API and dashboard
+  endpoints return only `prefix` + `key_hash`. Revocation — `revoked_at`;
+  rotation — a new key plus revoking the old one.
+- The access token lives in an httpOnly cookie, not in localStorage. OTP
+  is never logged.
+- The `bots/` directory is never committed (`.gitignore`).
 
-### IV. Два контура авторизации, отдельные пространства URL
+### IV. Two authorization realms, separate URL spaces
 
-- Люди: `AuthProvider` (v1 — `TelegramOtpProvider`) → JWT в httpOnly cookie →
-  `/api/dashboard/*`. Машины: заголовок `X-API-Key` на весь `/api/v1/*`
-  (кроме health). Машины не используют dashboard-URL, люди — не используют
-  `/api/v1/*` по ключу.
-- Смена способа входа (пароль, телефон, SMS) = новый адаптер `AuthProvider`
-  плюс колонка/форма, а не новый «логин-сервер». Выдача JWT, cookie, refresh
-  и API-ключи от провайдера не зависят.
-- Первого пользователя создаёт администратор (CLI/bootstrap-механизм),
-  саморегистрации по HTTP нет. Регистрация ботов по HTTP запрещена —
-  только CLI на сервере.
+- Humans: `AuthProvider` (v1 — `TelegramOtpProvider`) → JWT in an
+  httpOnly cookie → `/api/dashboard/*`. Machines: the `X-API-Key` header
+  on all of `/api/v1/*` (except health). Machines never use dashboard
+  URLs; humans never use `/api/v1/*` with a key.
+- Changing the login method (password, phone, SMS) = a new
+  `AuthProvider` adapter plus a column/form, not a new "login server".
+  JWT issuance, cookies, refresh, and API keys do not depend on the
+  provider.
+- The first user is created by an administrator (a CLI/bootstrap
+  mechanism); there is no HTTP self-registration. Registering bots over
+  HTTP is forbidden — CLI on the server only.
 
-## Технические ограничения (v1)
+## Engineering Standards
 
-- Стек: Python 3.12+, uv, FastAPI + Pydantic v2 + pydantic-settings,
-  SQLAlchemy 2 (async) + asyncpg + Alembic, PostgreSQL 16 на хосте,
-  aiogram 3 (только `Bot`), React + TypeScript + Vite + MUI (MIT).
-- Инструменты разработки: ruff, pytest + pytest-asyncio.
-- Деплой: systemd (api + worker отдельными юнитами), uv venv на хосте,
-  без Docker и Compose. Миграции (`alembic upgrade head`) выполняются до
-  старта сервисов.
-- Очередь = журнал: `PostgresBroker` работает по таблице `messages`;
-  отдельного брокера в v1 нет.
-- `bot_slug` — человекочитаемый (slug-safe ASCII) единый идентификатор бота
-  во входящем API, `messages` и имени файла конфигурации.
+Mandatory norms of engineering discipline. They carry the same force as
+the Core Principles; the difference is the subject: principles describe
+system properties, standards describe how code is written (see
+Governance).
 
-## Требования к тестам
+### Asynchrony
 
-- Юнит-тесты используют in-memory брокер и fake Telegram sender; реальные
-  секреты и `.env` в тестах не применяются.
-- Тесты с БД запускаются только при заданном `TEST_DATABASE_URL`, иначе
-  пропускаются.
-- Быстрые тесты обязаны покрывать поведение порта, хэши ключей/OTP и
-  генерацию slug.
+There are no blocking calls in runtime code (the api and worker
+processes).
+
+- Forbidden: `requests`, `time.sleep`, synchronous `psycopg2`, and any
+  other synchronous HTTP/DB clients in the event loop. Use async clients
+  instead (httpx, SQLAlchemy async + asyncpg) and `asyncio.sleep`.
+- A library without an async API is either replaced or called through
+  `asyncio.to_thread` with a justification comment at the call site.
+- CLI utilities and one-off administrative scripts are not runtime code.
+
+Rationale: a blocking call stops the event loop of the whole process —
+the API stops answering health checks, the worker stops renewing leases;
+for at-least-once delivery this is a direct threat.
+
+### Type checking
+
+- `mypy --strict` passes over the entire project codebase without
+  errors — a mandatory pre-merge gate.
+- `# type: ignore` is allowed only with an adjacent justification (a
+  comment or an issue link); "bare" ignores are not allowed.
+
+Rationale: strict typing is the cheapest static test; an ignore without
+a reason hides a defect instead of fixing it.
+
+### Database migrations
+
+- The Postgres schema changes only through Alembic revisions.
+  `CREATE TABLE`, `ALTER`, `DROP`, and `Base.metadata.create_all()` are
+  forbidden in application code.
+- The Alembic history is the single source of truth for the schema;
+  `alembic upgrade head` runs before services start.
+
+Rationale: a schema changed outside migrations cannot be reproduced on a
+clean environment and silently diverges between dev and prod.
+
+### Testing
+
+- Every public method and function is covered by at least one test.
+- Test coverage never drops below 80%.
+- Unit tests use the in-memory broker and a fake Telegram sender; real
+  secrets and `.env` are never used in tests.
+- DB tests run only when `TEST_DATABASE_URL` is set; otherwise they are
+  skipped.
+- Fast tests must cover port behavior, key/OTP hashing, and slug
+  generation.
+
+Rationale: an untested public method is undocumented behavior; the 80%
+threshold keeps coverage from degrading unnoticed.
+
+### Dependency licenses
+
+- All project dependencies (runtime and dev) are under licenses
+  compatible with MIT: MIT, BSD-2/3-Clause, ISC, Apache-2.0, PSF, and
+  similar permissive ones. Copyleft (GPL, AGPL) is not allowed.
+- Before adding a dependency, its license is checked; a dependency
+  without a clear license is not added.
+
+Rationale: a copyleft or unlicensed dependency restricts distribution
+and embedding of the project; permissive MIT-compatible licenses carry
+no such risk.
+
+### Stack and deployment (v1)
+
+- Stack: Python 3.12+, uv, FastAPI + Pydantic v2 + pydantic-settings,
+  SQLAlchemy 2 (async) + asyncpg + Alembic, PostgreSQL 16 on the host,
+  aiogram 3 (`Bot` only), React + TypeScript + Vite + MUI (MIT).
+- Development tools: ruff, mypy --strict, pytest + pytest-asyncio,
+  coverage.
+- Deployment: systemd (api + worker as separate units), uv venv on the
+  host, no Docker or Compose.
+- The queue is the journal: `PostgresBroker` works on the `messages`
+  table; there is no separate broker in v1.
+- `bot_slug` — a human-readable (slug-safe ASCII) single bot identifier
+  across the inbound API, `messages`, and the config file name.
 
 ## Governance
 
-- Конституция главнее материала отдельных фич и локальных практик: при
-  конфликте побеждает она.
-- Генерирующие команды Spec Kit (specify, clarify, plan, checklist, tasks,
-  implement) обязаны читать принципы конституции как входные ограничения
-  своих артефактов.
-- Гейты соответствия: **plan** заполняет Constitution Check и завершается
-  ERROR при неоправданном нарушении; **analyze** помечает конфликт
-  требования с MUST-принципом как CRITICAL; **converge** порождает task на
-  исправление нарушенного принципа. Ревью-гейты флоу после spec и plan —
-  точки человеческой проверки.
-- Поправки вносятся только отдельным явным обновлением конституции
-  ($speckit-constitution): версия по semver — MAJOR при удалении или
-  переопределении принципа, MINOR при добавлении принципа или существенном
-  расширении, PATCH при уточнении формулировок; каждая правка обновляет
-  дату `Last Amended`.
-- Команды analyze и converge конституцию только читают и не изменяют.
+- The constitution overrides individual feature material and local
+  practices: in a conflict, it wins.
+- The Principles and the Engineering Standards are equally binding:
+  principles describe system properties, standards describe code
+  discipline; the difference is the subject, not the force.
+- The constitution and all Spec Kit artifacts (specs, plans, tasks,
+  checklists) are written in English.
+- Spec Kit generating commands (specify, clarify, plan, checklist, tasks,
+  implement) must read the constitution — principles and standards — as
+  input constraints of their artifacts.
+- Compliance gates: **plan** fills the Constitution Check and ends with
+  ERROR on an unjustified violation; **analyze** marks a conflict between
+  a requirement and a MUST-norm (principle or standard) as CRITICAL;
+  **converge** spawns a task to fix the violated norm. Flow review gates
+  after spec and plan are human checkpoints.
+- Amendments are made only by an explicit constitution update
+  ($speckit-constitution): semver — MAJOR when removing or redefining a
+  principle or standard, MINOR when adding a principle or standard or
+  materially expanding one, PATCH for wording refinements; every change
+  updates the `Last Amended` date.
+- The analyze and converge commands only read the constitution and never
+  modify it.
 
-**Version**: 2.1.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-09-26
+**Version**: 2.2.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-09-27
