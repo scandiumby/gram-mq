@@ -1,4 +1,4 @@
-# Feature Specification: Outbound Message Queue Behind a Broker Port
+# Feature Specification: Очередь исходящих сообщений за портом брокера
 
 **Feature Branch**: `001-broker-port-postgres`
 
@@ -6,264 +6,261 @@
 
 **Status**: Draft
 
-**Input**: User description: "Outgoing message queue behind a broker port: the domain contract BrokerPort (enqueue, claim, ack, retry, dead_letter, queue_depth), PostgresBroker on the messages table, an in-memory adapter for tests, contract tests against both adapters, Alembic migrations."
+**Input**: User description: "Очередь исходящих сообщений за портом брокера: доменный контракт BrokerPort (enqueue, claim, ack, retry, dead_letter, queue_depth), PostgresBroker на таблице messages, in-memory адаптер для тестов, контрактные тесты против обоих адаптеров, миграции Alembic."
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Enqueueing a message (Priority: P1)
+### User Story 1 - Постановка сообщения в очередь (Priority: P1)
 
-As the API service (producer), I put an outgoing message into the target
-bot's queue so that it is guaranteed to survive until delivery — even if
-delivery happens later and by another process. The queue and the message
-journal are a single store: an enqueued message stays visible forever
-instead of disappearing after being sent.
+Как API-сервис (постановщик), я передаю исходящее сообщение в очередь нужного
+бота, чтобы оно гарантированно дожило до доставки — даже если доставка
+произойдёт позже и другим процессом. Очередь и журнал сообщений — единое
+хранилище: поставленное сообщение остаётся видимым навсегда, а не исчезает
+после отправки.
 
-**Why this priority**: without enqueueing there is no queue; this is the
-minimal self-contained slice where the value of the whole system begins.
+**Why this priority**: без постановки нет очереди; это минимальный
+самостоятельный срез, с которого начинается ценность всей системы.
 
-**Independent Test**: verifiable in isolation — enqueue a message and
-confirm it gets the queued status, is counted in the bot's queue depth,
-and stays in place after the process restarts.
+**Independent Test**: можно проверить изолированно — поставить сообщение и
+убедиться, что оно получило статус queued, учтено в глубине очереди бота и
+остаётся на месте после перезапуска процесса.
 
 **Acceptance Scenarios**:
 
-1. **Given** a bot with an empty queue, **When** a message is enqueued,
-   **Then** it has the queued status and the bot's queue depth is 1.
-2. **Given** a message is enqueued, **When** the process working with the
-   queue restarts, **Then** the message is in place and available for
-   claiming (journal = queue).
+1. **Given** у бота пустая очередь, **When** сообщение поставлено в очередь,
+   **Then** оно имеет статус queued и глубина очереди бота равна 1.
+2. **Given** сообщение поставлено, **When** процесс, работающий с очередью,
+   перезапущен, **Then** сообщение на месте и доступно для захвата
+   (журнал = очередь).
 
 ---
 
-### User Story 2 - Claiming a message into exclusive ownership (Priority: P1)
+### User Story 2 - Захват сообщения в исключительное владение (Priority: P1)
 
-As the delivery worker, I take a message from the queue into temporary
-exclusive ownership (a lease): while the lease is alive, no other worker
-gets that row. Claiming distributes work between bots fairly: a bot with
-a huge queue does not starve the others — every bot with work receives
-claims.
+Как воркер доставки, я забираю сообщение из очереди во временное исключительное
+владение (лиз): пока лиз жив, эту строку не получает ни один другой воркер.
+Захват распределяет работу между ботами справедливо: бот с огромной очередью
+не лишает остальных доставки — каждый бот с работой получает захваты.
 
-**Why this priority**: claiming with a lease is the mechanism that makes
-the queue safe for concurrent workers; fairness protects small bots from
-starvation.
+**Why this priority**: захват с лизом — механизм, который делает очередь
+безопасной для параллельных воркеров; справедливость защищает малые боты
+от голодания.
 
-**Independent Test**: two bots with messages → a series of claims returns
-messages from both bots instead of draining one bot's whole queue first;
-a message in another worker's live lease is never handed out again.
+**Independent Test**: два бота с сообщениями → серия захватов возвращает
+сообщения обоих ботов, а не выгребает сначала всю очередь одного; сообщение
+в чужом живом лизе не отдаётся повторно.
 
 **Acceptance Scenarios**:
 
-1. **Given** queued messages on two bots, **When** a worker makes a series
-   of claims, **Then** the first claims include messages from both bots
-   (no single bot monopolizes the stream).
-2. **Given** a message is claimed by worker A and its lease is alive,
-   **When** worker B claims, **Then** that row is not handed to B.
-3. **Given** the queue is empty, **When** a worker claims, **Then** the
-   answer is "no work".
+1. **Given** сообщения queued у двух ботов, **When** воркер делает серию
+   захватов, **Then** среди первых захватов есть сообщения обоих ботов
+   (один бот не монополизирует поток).
+2. **Given** сообщение захвачено воркером A и лиз жив, **When** воркер B
+   делает захват, **Then** эта строка ему не отдаётся.
+3. **Given** очередь пуста, **When** воркер делает захват, **Then** ответ —
+   «работы нет».
 
 ---
 
-### User Story 3 - Surviving a worker crash (Priority: P1)
+### User Story 3 - Переживание падения воркера (Priority: P1)
 
-As the system, I survive the crash of any worker without losing messages:
-if a worker died before finishing processing, the expired lease returns
-the row to claimable state automatically — without manual intervention.
-Redelivery is acceptable: the contract is at-least-once; a duplicate in
-the chat is better than a loss.
+Как система, я переживаю падение любого воркера без потери сообщений:
+если воркер умер, не завершив обработку, истёкший лиз автоматически
+возвращает строку в доступные для захвата — без ручного вмешательства.
+Повторная доставка допустима: контракт — at-least-once, дубль в чате
+лучше потери.
 
-**Why this priority**: this is a constitutional invariant of the project
-(NON-NEGOTIABLE); reliability is not delegated to the process supervisor.
+**Why this priority**: это конституционный инвариант проекта (NON-NEGOTIABLE);
+надёжность не делегируется супервизору процессов.
 
-**Independent Test**: claim a message, "kill" its owner, let the lease
-expire — the next claim returns the same row.
+**Independent Test**: захватить сообщение, «убить» владельца, истечь лиз —
+следующий захват возвращает ту же строку.
 
 **Acceptance Scenarios**:
 
-1. **Given** a message in leased with an expired lease, **When** any
-   worker claims, **Then** the row is handed out for processing again.
-2. **Given** a message is claimed and its lease is alive, **When** the
-   lease has not expired, **Then** the row is handed to nobody but the
-   owner (ownership holds).
+1. **Given** сообщение в leased с истёкшим сроком лиза, **When** любой воркер
+   делает захват, **Then** строка снова отдаётся в обработку.
+2. **Given** сообщение захвачено и лиз жив, **When** лиз не истёк,
+   **Then** строка не отдаётся никому, кроме владельца (владение
+   соблюдается).
 
 ---
 
-### User Story 4 - Recording the processing outcome (Priority: P1)
+### User Story 4 - Фиксация результата обработки (Priority: P1)
 
-As the worker, I record the processing outcome: success — the delivery
-acknowledgement (the Telegram message id and the sent status) is recorded
-atomically, in a single operation; a temporary failure (rate limit,
-network) — the message goes back to the queue with a delay and an attempt
-counter; exhausted attempts or a fatal error — the message is marked
-failed with a reason and never claimed again, remaining in the journal.
+Как воркер, я фиксирую исход обработки: успех — подтверждение доставки
+(идентификатор сообщения Telegram и статус sent) фиксируются атомарно,
+одной операцией; временный сбой (лимит, сеть) — сообщение возвращается
+в очередь с задержкой и счётчиком попыток; исчерпание попыток или
+неисправимая ошибка — сообщение помечается failed с причиной и больше
+не забирается, оставаясь в журнале.
 
-**Why this priority**: without recording the outcome the queue can neither
-finish a delivery, nor retry safely, nor stop infinite retries.
+**Why this priority**: без фиксации результата очередь не может ни завершить
+доставку, ни безопасно повторять, ни останавливать вечные повторения.
 
-**Independent Test**: the three branches are verified in isolation — ack,
-retry (not claimable until the delay passes), dead_letter after the
-attempt limit.
+**Independent Test**: три ветки проверяются изолированно — ack, retry
+(недоступность до наступления задержки), dead_letter после лимита попыток.
 
 **Acceptance Scenarios**:
 
-1. **Given** a message is claimed, **When** the worker confirms success,
-   **Then** the sent status and the Telegram message id are recorded in
-   one operation.
-2. **Given** a message is retried with a delay, **When** the delay has not
-   passed yet, **Then** claiming does not return it; **When** the time
-   comes, **Then** the row is available and the attempt counter is
-   incremented.
-3. **Given** the attempt limit is exhausted, **When** the worker records
-   a fatal outcome, **Then** the status is failed with a reason; claiming
-   never returns the row again; the row stays in the journal.
+1. **Given** сообщение захвачено, **When** воркер подтверждает успех,
+   **Then** статус sent и идентификатор сообщения Telegram зафиксированы
+   одной операцией.
+2. **Given** сообщение возвращено на повтор с задержкой, **When** задержка
+   ещё не истекла, **Then** захват его не отдаёт; **When** время наступило,
+   **Then** строка доступна и счётчик попыток увеличен.
+3. **Given** исчерпан лимит попыток, **When** воркер фиксирует
+   неисправимость, **Then** статус failed с причиной; захват строку больше
+   не возвращает, строка остаётся в журнале.
 
 ---
 
-### User Story 5 - Queue depth for the operator (Priority: P2)
+### User Story 5 - Глубина очереди для оператора (Priority: P2)
 
-As the operator, I see the queue depth for every bot — the number of
-undelivered messages (waiting + in processing; delivered and failed are
-not counted) — to notice jams and monitor the cleanup after incidents.
+Как оператор, я вижу по каждому боту глубину очереди — число недоставленных
+сообщений (ожидающие + находящиеся в обработке; доставленные и failed
+не считаются), чтобы замечать заторы и контролировать разгребание после
+инцидентов.
 
-**Why this priority**: observability is needed on top of a working queue;
-without stories 1–4 there is nothing to show.
+**Why this priority**: наблюдаемость нужна поверх работающей очереди;
+без историй 1–4 показывать нечего.
 
-**Independent Test**: a bot without undelivered messages has depth 0;
-after an enqueue it grows, after a delivery acknowledgement it drops.
+**Independent Test**: у бота без недоставленных сообщений глубина 0;
+после постановки — растёт, после подтверждения доставки — снижается.
 
 **Acceptance Scenarios**:
 
-1. **Given** a bot has no undelivered messages, **When** the operator
-   requests the depth, **Then** the answer is 0.
-2. **Given** a message is enqueued and claimed, **When** the depth is
-   requested, **Then** it is counted (a claimed message is undelivered).
+1. **Given** у бота нет недоставленных сообщений, **When** оператор запрашивает
+   глубину, **Then** ответ 0.
+2. **Given** сообщение поставлено и захвачено, **When** запрашивается глубина,
+   **Then** оно учитывается (захваченное — недоставленное).
 
 ---
 
-### User Story 6 - A lightweight queue double for tests (Priority: P2)
+### User Story 6 - Лёгкий двойник очереди для тестов (Priority: P2)
 
-As a developer, I test domain logic (API, worker) against a lightweight
-in-memory queue double with the same semantics of statuses, leases, and
-attempts, without deploying infrastructure. Semantic unity is confirmed
-by a single contract test suite that runs against both the double and the
-real queue implementation (when a test DB is configured).
+Как разработчик, я тестирую доменную логику (API, воркер) против лёгкого
+двойника очереди в памяти с той же семантикой статусов, лиза и попыток,
+без развёртывания инфраструктуры. Единство семантики подтверждается одним
+набором контрактных тестов, который прогоняется и против двойника,
+и против настоящей реализации очереди (при настроенной тестовой БД).
 
-**Why this priority**: it speeds up and stabilizes the tests of everything
-above the queue; it requires the working contract from stories 1–4.
+**Why this priority**: ускоряет и стабилизирует тесты всего, что выше
+очереди; требует работающего контракта из историй 1–4.
 
-**Independent Test**: the contract scenario suite produces the same result
-against both implementations.
+**Independent Test**: набор контрактных сценариев даёт одинаковый результат
+против обеих реализаций.
 
 **Acceptance Scenarios**:
 
-1. **Given** the single contract test suite, **When** it runs against the
-   in-memory double, **Then** all scenarios of stories 1–5 pass.
-2. **Given** a test DB is configured, **When** the same suite runs against
-   the primary implementation, **Then** the results are identical.
+1. **Given** единый набор контрактных тестов, **When** он прогнан против
+   двойника в памяти, **Then** все сценарии историй 1–5 проходят.
+2. **Given** настроена тестовая БД, **When** тот же набор прогнан против
+   основной реализации, **Then** результаты идентичны.
 
 ---
 
 ### Edge Cases
 
-- Two workers try to claim the same row simultaneously — exactly one gets
-  it; the other gets different work or "no work".
-- A worker disappears forever without finishing — the expired lease
-  returns the row to work; the message is not lost, redelivery is
-  possible (the at-least-once contract).
-- A message is retried before its delay has passed — claiming does not
-  return it (backoff is enforced by the queue, not by worker discipline).
-- The attempt limit is exhausted — the message is failed forever with a
-  reason; infinite retry loops are impossible.
-- Enqueueing a message for an unregistered bot is impossible (referential
-  integrity onto the bot).
-- The queue depth of a bot with no messages is 0, not an error.
+- Два воркера одновременно пытаются захватить одну и ту же строку — строку
+  получает ровно один; второй получает другую работу или «работы нет».
+- Воркер исчез навсегда, не завершив обработку — истёкший лиз возвращает
+  строку в работу; сообщение не теряется, возможна повторная доставка
+  (контракт at-least-once).
+- Сообщение возвращается на повтор до наступления задержки — захват его не
+  отдаёт (backoff соблюдается очередью, а не дисциплиной воркера).
+- Лимит попыток исчерпан — сообщение навсегда failed с причиной; зацикливание
+  повторов исключено.
+- Постановка сообщения для незарегистрированного бота — невозможна
+  (ссылочная целостность на бота).
+- Глубина очереди бота без сообщений — 0, а не ошибка.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST provide a domain queue contract with the
-  operations enqueue, claim, ack, retry, dead_letter, queue_depth; the
-  semantics are domain-level, not protocol-specific (not AMQP).
-- **FR-002**: enqueue MUST record a message with the queued status; the
-  queue and the journal are a single store; an enqueued message does not
-  disappear after delivery.
-- **FR-003**: claim MUST hand out only rows with the queued status whose
-  available_at has arrived, moving them to leased while recording the
-  owner (locked_by), the claim moment (locked_at), and the lease deadline
+- **FR-001**: Система MUST предоставлять доменный контракт очереди с
+  операциями enqueue, claim, ack, retry, dead_letter, queue_depth; семантика
+  доменная, а не протокольно-специфичная (не AMQP).
+- **FR-002**: enqueue MUST фиксировать сообщение со статусом queued; очередь
+  и журнал — единое хранилище, поставленное сообщение не исчезает после
+  доставки.
+- **FR-003**: claim MUST отдавать только строки со статусом queued с
+  наступившим available_at, переводя их в leased с фиксацией владельца
+  (locked_by), момента захвата (locked_at) и срока владения
   (lease_expires_at).
-- **FR-004**: claim MUST distribute work fairly between bots: one bot's
-  large queue must not starve the other bots' messages; the specific
-  fairness mechanism is the plan's decision.
-- **FR-005**: A row in leased with an expired lease_expires_at MUST
-  automatically become claimable without manual intervention.
-- **FR-006**: ack MUST record the delivered message id
-  (telegram_message_id) and the sent status in one atomic operation.
-- **FR-007**: retry MUST return the row to queued with
-  available_at = now + delay, attempts incremented by 1, and ownership
-  released.
-- **FR-008**: After max_attempts is exhausted, dead_letter MUST move the
-  row to failed with a reason text; claim never returns it again; the row
-  stays in the journal.
-- **FR-009**: queue_depth MUST return the number of the bot's undelivered
-  messages (statuses queued and leased); sent and failed are not counted.
-- **FR-010**: The contract MUST have a second implementation — an
-  in-memory double — with identical semantics of statuses, ownership, and
-  attempts; a single contract test suite runs against both
-  implementations (the double always, the primary one when a test DB is
-  configured).
-- **FR-011**: The claim result (Delivery) MUST be opaque to the domain:
-  its internals belong to the implementation; the domain never inspects
-  it.
-- **FR-012**: The data schema (the messages table and the bots table) MUST
-  be applied by versioned migrations; the bots table contains only the
-  bot_slug identifier and a creation timestamp — no tokens or settings.
-- **FR-013**: New contract methods MUST appear only when a concrete queue
-  implementation needs them (the contract grows on demand, not in
-  advance).
+- **FR-004**: claim MUST распределять работу справедливо между ботами:
+  наличие большой очереди у одного бота не лишает сообщений остальных
+  ботов; конкретный механизм справедливости — решение плана.
+- **FR-005**: Строка в leased с истёкшим lease_expires_at MUST автоматически
+  становиться доступной для захвата без ручного вмешательства.
+- **FR-006**: ack MUST фиксировать идентификатор доставленного сообщения
+  (telegram_message_id) и статус sent одной атомарной операцией.
+- **FR-007**: retry MUST возвращать строку в queued с available_at = now +
+  delay, увеличением attempts на 1 и сбросом владения.
+- **FR-008**: После исчерпания max_attempts dead_letter MUST переводить
+  строку в failed с текстом причины; claim её больше не возвращает, строка
+  остаётся в журнале.
+- **FR-009**: queue_depth MUST возвращать число недоставленных сообщений
+  бота (статусы queued и leased); sent и failed не учитываются.
+- **FR-010**: Контракт MUST иметь вторую реализацию — двойник в памяти —
+  с идентичной семантикой статусов, владения и попыток; единый набор
+  контрактных тестов прогоняется против обеих реализаций (двойник — всегда,
+  основная — при настроенной тестовой БД).
+- **FR-011**: Результат захвата (Delivery) MUST быть непрозрачным для домена:
+  внутреннее устройство — дело реализации, домен его не разбирает.
+- **FR-012**: Схема данных (таблица сообщений и таблица ботов) MUST
+  накатываться версионными миграциями; таблица ботов содержит только
+  идентификатор bot_slug и метку создания — без токенов и настроек.
+- **FR-013**: Новые методы контракта MUST появляться только тогда, когда
+  они нужны конкретной реализации очереди (контракт растёт по
+  необходимости, не заранее).
 
 ### Key Entities *(include if feature involves data)*
 
-- **Outbound message (OutboundMessage)**: id (UUID), bot_slug, chat_id,
-  payload (text and formatting); many messages to one bot.
-- **Delivery record (journal row)**: status (queued / leased / sent /
+- **Исходящее сообщение (OutboundMessage)**: id (UUID), bot_slug, chat_id,
+  payload (текст и форматирование); связь «много сообщений — один бот».
+- **Строка доставки (запись журнала)**: статус (queued / leased / sent /
   failed), available_at, locked_at, locked_by, lease_expires_at, attempts,
   max_attempts, telegram_message_id, error, created_at, sent_at.
-- **Delivery**: an opaque handle of the claimed row, issued by the queue
-  to the worker.
-- **Bot**: bot_slug — the single bot identifier; no tokens or settings in
-  this entity.
+- **Delivery**: непрозрачный handle захваченной строки, выданный очередью
+  воркеру.
+- **Бот (Bot)**: bot_slug — единый идентификатор бота; без токенов и
+  настроек в этой сущности.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: A message accepted into the queue survives an abnormal
-  termination and a restart of the delivery process without manual
-  intervention — confirmed by the "worker crash" scenario test against
-  both implementations.
-- **SC-002**: The full contract acceptance suite (stories 1–5) produces an
-  identical result against both queue implementations.
-- **SC-003**: With one bot's queue at 1000+ messages and other bots having
-  messages, the first 10 claims contain messages from at least two
-  different bots — starvation is ruled out.
-- **SC-004**: Message enqueue time does not depend on the depth of the
-  already accumulated queue (enqueueing does not degrade as the journal
-  grows).
+- **SC-001**: Сообщение, принятое в очередь, переживает аварийное
+  завершение и рестарт процесса доставки без ручного вмешательства —
+  подтверждается сценарным тестом «падение воркера» против обеих реализаций.
+- **SC-002**: Полный набор контрактных приёмочных сценариев (истории 1–5)
+  даёт идентичный результат против обеих реализаций очереди.
+- **SC-003**: При очереди одного бота в 1000+ сообщений и наличии сообщений
+  у других ботов, в первых 10 захватах встречаются сообщения не менее чем
+  двух разных ботов — голодание исключено.
+- **SC-004**: Время постановки сообщения в очередь не зависит от глубины
+  уже накопленной очереди (постановка не деградирует с ростом журнала).
 
 ## Assumptions
 
-- The concrete values of the attempt limit (max_attempts), the lease
-  duration, and the retry delays are set by the implementation plan; the
-  spec fixes only the semantics.
-- The fairness mechanism of claiming (round-robin, weighted, random) is
-  the plan's decision; the spec requires only the absence of starvation.
-- Delivery duplicates are acceptable and documented: the delivery contract
-  is at-least-once (Constitution, Principle II).
-- The first implementation of the port is PostgresBroker on the messages
-  table; the in-memory double is for tests (Constitution, Principle I).
-  A RabbitMQ adapter is outside this feature.
-- Tests of the primary implementation require a configured test DB
-  (TEST_DATABASE_URL); without it they are skipped (Constitution,
-  Engineering Standards, "Testing").
-- The DB schema is applied by Alembic migrations (Constitution,
-  Engineering Standards, "Database migrations").
+- Конкретные значения лимита попыток (max_attempts), длительности лиза и
+  задержек повторов задаёт план реализации; спека фиксирует только
+  семантику.
+- Лиз не продлевается: операция renew не входит в контракт v1; инвариант —
+  длительность лиза превышает худшее время отправки, затянувшаяся
+  отправка разрешается истечением лиза и реклеймом (дубль допустим,
+  at-least-once).
+- Механизм справедливости захвата (по кругу, взвешенный, случайный) —
+  решение плана; спека требует только отсутствие голодания.
+- Дубли доставки допустимы и документированы: контракт доставки
+  at-least-once (конституция, принцип II).
+- Первая реализация порта — PostgresBroker на таблице messages; двойник
+  в памяти — для тестов (конституция, принцип I). Адаптер RabbitMQ — вне
+  этой фичи.
+- Тесты основной реализации требуют настроенной тестовой БД
+  (TEST_DATABASE_URL); без неё пропускаются (конституция,
+  Engineering Standards → Testing).
+- Схема БД накатывается миграциями Alembic (конституция,
+  Engineering Standards → Database migrations).

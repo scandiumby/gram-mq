@@ -2,26 +2,21 @@
 
 <!--
 Sync Impact Report (temporary note for review — remove before committing)
-- Version change: 2.2.0 → 2.3.0 (MINOR: a new Configuration standard
-  added; "Stack and deployment (v1)" materially expanded)
-- Modified principles: none (Core Principles I–IV unchanged)
-- Modified standards: "Stack and deployment (v1)" — PostgreSQL 16 may now
-  be co-located with the services or on a dedicated instance reachable
-  over TCP (sslmode=require preferred); a cross-reference to the new
-  Configuration standard added (pydantic-settings is no longer only a
-  stack mention)
-- Added sections: Engineering Standards > "Configuration" — GRAMMQ_-prefixed
-  BaseSettings subclasses are the only settings channel; non-secret
-  defaults are versioned in code; secret-bearing fields are required,
-  typed SecretStr, and fail fast; per-host overrides and secrets live in
-  a single env-file outside the deploy tree, located via GRAMMQ_ENV_FILE
-  (one systemd pointer line in production, ./.env fallback locally),
-  never committed, never deployed; api and worker share the file;
-  TCP-with-password is the DB default, Unix-socket peer auth is an
-  allowed co-located optimization; real env vars take precedence over the
-  env-file; bot tokens stay in bots/.env-<bot_slug> per Principle III
+- Version change: 2.3.0 → 2.4.0 (MINOR: a governance norm materially
+  changed — the artifact-language mandate was redefined from English to
+  Russian; no principle or engineering standard was touched)
+- Modified principles: none
+- Modified standards: none
+- Modified governance: the artifact-language bullet — Spec Kit feature
+  artifacts (spec.md, plan.md, research.md, data-model.md, contracts/,
+  quickstart.md, tasks.md, checklists) are now written in Russian, the
+  project's working language; code, identifiers, commit messages, and the
+  constitution itself remain in English
+- Added sections: none
 - Removed sections: none
-- Follow-up TODOs: none
+- Follow-up TODOs: none. Resolves analyze finding C1 for feature
+  001-broker-port-postgres (its Russian artifacts become compliant;
+  no artifact translation is needed)
 -->
 
 ## Core Principles
@@ -232,8 +227,10 @@ tests — reads configuration the same way.
 - The Principles and the Engineering Standards are equally binding:
   principles describe system properties, standards describe code
   discipline; the difference is the subject, not the force.
-- The constitution and all Spec Kit artifacts (specs, plans, tasks,
-  checklists) are written in English.
+- Spec Kit feature artifacts (spec.md, plan.md, research.md, data-model.md,
+  contracts/, quickstart.md, tasks.md, checklists) are written in Russian —
+  the project's working language. Code, identifiers, commit messages, and
+  the constitution itself are maintained in English.
 - Spec Kit generating commands (specify, clarify, plan, checklist, tasks,
   implement) must read the constitution — principles and standards — as
   input constraints of their artifacts.
@@ -250,4 +247,4 @@ tests — reads configuration the same way.
 - The analyze and converge commands only read the constitution and never
   modify it.
 
-**Version**: 2.3.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-10-04
+**Version**: 2.4.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-10-04
