@@ -19,7 +19,7 @@ dead_letter / queue_depth) с двумя реализациями: `PostgresBrok
 **Primary Dependencies**: SQLAlchemy 2 (async) + asyncpg, Alembic,
 pydantic-settings; dev: pytest + pytest-asyncio, ruff, mypy, coverage
 
-**Storage**: PostgreSQL 16 — co-located с сервисами или отдельный инстанс
+**Storage**: PostgreSQL 17 — co-located с сервисами или отдельный инстанс
 по TCP (`sslmode=require` при возможности); подключение — по стандарту
 Configuration (`GRAMMQ_DATABASE_URL`: SecretStr, GRAMMQ_-префикс, без
 дефолта); тестовая БД через `TEST_DATABASE_URL`, без неё Postgres-тесты

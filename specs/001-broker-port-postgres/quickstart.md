@@ -8,34 +8,43 @@
 
 - Python 3.12+, uv.
 - `uv sync --group dev` (устанавливает SQLAlchemy/asyncpg/Alembic + pytest).
-- Для Postgres-прогона: доступная PostgreSQL 16 и переменная окружения
-  `TEST_DATABASE_URL` (например
-  `postgresql+asyncpg://gram:gram@localhost:5432/gram_mq_test`).
+- Демо настроек: скопируйте `.env.example` в `.env` и заполните
+  `GRAMMQ_DATABASE_URL` (миграции в п.2 читают её через настройки).
+- Для Postgres-прогона: доступная PostgreSQL 17 и настроенный тестовый URL —
+  либо переменная окружения `GRAMMQ_TEST_DATABASE_URL` (алиас для CI:
+  `TEST_DATABASE_URL`), либо `./.env.test` (скопируйте `.env.test.example`
+  и заполните `GRAMMQ_TEST_DATABASE_URL`, например
+  `postgresql+asyncpg://gram:gram@localhost:5432/gram_mq_test`); без него
+  Postgres-параметризация молча пропускается.
 
 ## 1. Контрактные тесты и статические гейты (in-memory, без инфраструктуры)
 
 ```bash
 uv run ruff check . && uv run ruff format --check .
 uv run mypy .                                   # strict, 0 ошибок
-uv run coverage run -m pytest tests/contract -q
+uv run coverage run --omit="src/gram_mq/adapters/postgres/*" -m pytest tests/contract -q
 uv run coverage report --fail-under=80          # порог Testing-стандарта
 ```
 
 Ожидание: линт и типы чисты; все сценарии историй 1–5 спеки проходят
 против InMemoryBroker; каждый публичный метод порта покрыт тестом;
-coverage ≥ 80%. Прогон занимает секунды и не требует БД.
+coverage ≥ 80%. Прогон занимает секунды и не требует БД. Без
+TEST_DATABASE_URL DB-gated адаптер исключается флагом `--omit`; полный
+coverage-прогон с БД (п.2) идёт без `--omit` и покрывает его целиком.
 
 ## 2. Контрактные тесты (PostgresBroker)
 
 ```bash
-# схема: накатить миграции в тестовую БД
-TEST_DATABASE_URL=... uv run alembic upgrade head
-TEST_DATABASE_URL=... uv run pytest tests/contract -q
+# Схему в тестовую базу сюит накатывает сам (alembic upgrade head перед
+# прогоном). Тестовая БД — GRAMMQ_TEST_DATABASE_URL / .env.test
+# (CI-алиас TEST_DATABASE_URL тоже работает).
+TEST_DATABASE_URL=... uv run coverage run -m pytest tests/contract -q
+uv run coverage report --fail-under=80
 ```
 
 Ожидание: тот же сюит проходит с тем же результатом (FR-010, SC-002).
-Без `TEST_DATABASE_URL` Postgres-часть молча пропускается (skipif) —
-конституция, «Требования к тестам».
+Без настроенной тестовой БД Postgres-часть молча пропускается (skipif) —
+конституция, Engineering Standards → Testing.
 
 ## 3. Ручной smoke: полный цикл на in-memory брокере
 

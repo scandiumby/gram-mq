@@ -26,11 +26,11 @@ Single project: `src/`, `tests/` от корня репозитория (см. p
 
 **Purpose**: Каркас проекта с нуля (в рабочем дереве нет ни pyproject, ни src)
 
-- [ ] T001 Создать pyproject.toml: uv-проект, requires-python ">=3.12", зависимости sqlalchemy>=2, asyncpg, alembic, pydantic-settings; dev-группа pytest, pytest-asyncio, ruff, mypy, coverage; src-layout (tool.setuptools или hatchling, пакет из src/gram_mq)
-- [ ] T002 [P] Создать скелет пакета: src/gram_mq/__init__.py, tests/__init__.py, tests/contract/__init__.py
-- [ ] T003 [P] Настроить инструменты в pyproject.toml: [tool.pytest.ini_options] asyncio_mode="auto", testpaths=["tests"]; [tool.ruff] line-length=88, select базовый набор (E,F,I,UP,B,ASYNC); [tool.mypy] strict=true; [tool.coverage.report] fail_under=80
-- [ ] T004 [P] Дополнить .gitignore: .venv/, __pycache__/, .pytest_cache/, .ruff_cache/
-- [ ] T005 Выполнить `uv sync --group dev`, убедиться, что `uv run pytest` и `uv run ruff check .` запускаются на пустом tests/
+- [x] T001 Создать pyproject.toml: uv-проект, requires-python ">=3.12", зависимости sqlalchemy>=2, asyncpg, alembic, pydantic-settings; dev-группа pytest, pytest-asyncio, ruff, mypy, coverage; src-layout (tool.setuptools или hatchling, пакет из src/gram_mq)
+- [x] T002 [P] Создать скелет пакета: src/gram_mq/__init__.py, tests/__init__.py, tests/contract/__init__.py
+- [x] T003 [P] Настроить инструменты в pyproject.toml: [tool.pytest.ini_options] asyncio_mode="auto", testpaths=["tests"]; [tool.ruff] line-length=88, select базовый набор (E,F,I,UP,B,ASYNC); [tool.mypy] strict=true; [tool.coverage.report] fail_under=80
+- [x] T004 [P] Дополнить .gitignore: .venv/, __pycache__/, .pytest_cache/, .ruff_cache/
+- [x] T005 Выполнить `uv sync --group dev`, убедиться, что `uv run pytest` и `uv run ruff check .` запускаются на пустом tests/
 
 **Checkpoint**: проект собирается, тестовый прогон зелёный (0 тестов)
 
@@ -40,16 +40,16 @@ Single project: `src/`, `tests/` от корня репозитория (см. p
 
 **Purpose**: Общая инфраструктура: настройки, БД-слой, модели, миграция, контракт порта, каркас контрактных тестов. Блокирует все user stories.
 
-- [ ] T006 Реализовать src/gram_mq/settings.py по стандарту Configuration (RQ-10): BaseSettings с env_prefix="GRAMMQ_"; database_url: SecretStr — required, без дефолта (GRAMMQ_DATABASE_URL), broker_lease_seconds: int = 60 (RQ-1), broker_max_attempts: int = 5 (RQ-2); env-файл — путь из GRAMMQ_ENV_FILE, локальный фолбэк ./.env; реальные env-переменные приоритетнее файла
-- [ ] T007 Реализовать src/gram_mq/db.py: async engine (asyncpg) + async_sessionmaker из settings.database_url.get_secret_value() — SecretStr раскрывается ровно в этой одной точке
-- [ ] T008 [P] Создать src/gram_mq/models/base.py: DeclarativeBase + общий naming_convention для констрейнтов
-- [ ] T009 [P] Создать src/gram_mq/models/bots.py: Bot — bot_slug: string PK; created_at: timestamptz NOT NULL DEFAULT now() (токенов и настроек в таблице нет — конституция, принцип III)
-- [ ] T010 [P] Создать src/gram_mq/models/messages.py: Message — id: UUID PK (генерация в приложении, RQ-7); bot_slug: string NOT NULL FK→bots; chat_id: string NOT NULL; payload: JSONB NOT NULL; status: enum NOT NULL (queued/leased/sent/failed); available_at: timestamptz NOT NULL; locked_at, locked_by, lease_expires_at: NULL; attempts: int NOT NULL DEFAULT 0; max_attempts: int NOT NULL DEFAULT 5; telegram_message_id: string NULL; error: text NULL; created_at: timestamptz NOT NULL; sent_at: timestamptz NULL
-- [ ] T011 [P] Создать src/gram_mq/models/claim_state.py: BotClaimState — bot_slug: string PK FK→bots; last_claim_at: timestamptz NULL (RQ-4)
-- [ ] T012 Настроить alembic/: async env.py (по database_url), создать начальную миграцию: таблицы bots, messages, bot_claim_state + три частичных индекса (RQ-6): messages(status, available_at) WHERE status='queued'; messages(lease_expires_at) WHERE status='leased'; messages(bot_slug) WHERE status IN ('queued','leased')
-- [ ] T013 Реализовать src/gram_mq/ports/broker.py строго по contracts/broker-port.md: OutboundMessage (id: UUID, bot_slug, chat_id, payload: dict), Delivery (id, bot_slug, chat_id, payload, context: dict — непрозрачен для домена), Protocol BrokerPort с сигнатурами enqueue/claim(worker_id)/ack/retry(delay, reason)/dead_letter(reason)/queue_depth; docstring-инварианты 1–6 из контракта
-- [ ] T014 Создать tests/conftest.py: фикстура `clock` (инжектируемые часы для InMemoryBroker); фикстура `register_bots` (создать строки bots + bot_claim_state через адаптер/сессию); параметризованная фабрика `make_broker` — InMemoryBroker(clock) всегда, PostgresBroker при TEST_DATABASE_URL (иначе skip)
-- [ ] T015 Создать tests/contract/test_broker_port.py: каркас с параметризацией по адаптерам (ids=["memory","postgres"]) и пустым smoke-тестом на существование фикстуры
+- [x] T006 Реализовать src/gram_mq/settings.py по стандарту Configuration (RQ-10): BaseSettings с env_prefix="GRAMMQ_"; database_url: SecretStr — required, без дефолта (GRAMMQ_DATABASE_URL), broker_lease_seconds: int = 60 (RQ-1), broker_max_attempts: int = 5 (RQ-2); env-файл — путь из GRAMMQ_ENV_FILE, локальный фолбэк ./.env; реальные env-переменные приоритетнее файла
+- [x] T007 Реализовать src/gram_mq/db.py: async engine (asyncpg) + async_sessionmaker из settings.database_url.get_secret_value() — SecretStr раскрывается ровно в этой одной точке
+- [x] T008 [P] Создать src/gram_mq/models/base.py: DeclarativeBase + общий naming_convention для констрейнтов
+- [x] T009 [P] Создать src/gram_mq/models/bots.py: Bot — bot_slug: string PK; created_at: timestamptz NOT NULL DEFAULT now() (токенов и настроек в таблице нет — конституция, принцип III)
+- [x] T010 [P] Создать src/gram_mq/models/messages.py: Message — id: UUID PK (генерация в приложении, RQ-7); bot_slug: string NOT NULL FK→bots; chat_id: string NOT NULL; payload: JSONB NOT NULL; status: enum NOT NULL (queued/leased/sent/failed); available_at: timestamptz NOT NULL; locked_at, locked_by, lease_expires_at: NULL; attempts: int NOT NULL DEFAULT 0; max_attempts: int NOT NULL DEFAULT 5; telegram_message_id: string NULL; error: text NULL; created_at: timestamptz NOT NULL; sent_at: timestamptz NULL
+- [x] T011 [P] Создать src/gram_mq/models/claim_state.py: BotClaimState — bot_slug: string PK FK→bots; last_claim_at: timestamptz NULL (RQ-4)
+- [x] T012 Настроить alembic/: async env.py (по database_url), создать начальную миграцию: таблицы bots, messages, bot_claim_state + три частичных индекса (RQ-6): messages(status, available_at) WHERE status='queued'; messages(lease_expires_at) WHERE status='leased'; messages(bot_slug) WHERE status IN ('queued','leased')
+- [x] T013 Реализовать src/gram_mq/ports/broker.py строго по contracts/broker-port.md: OutboundMessage (id: UUID, bot_slug, chat_id, payload: dict), Delivery (id, bot_slug, chat_id, payload, context: dict — непрозрачен для домена), Protocol BrokerPort с сигнатурами enqueue/claim(worker_id)/ack/retry(delay, reason)/dead_letter(reason)/queue_depth; docstring-инварианты 1–6 из контракта
+- [x] T014 Создать tests/conftest.py: фикстура `clock` (инжектируемые часы для InMemoryBroker); фикстура `register_bots` (создать строки bots + bot_claim_state через адаптер/сессию); параметризованная фабрика `make_broker` — InMemoryBroker(clock) всегда, PostgresBroker при TEST_DATABASE_URL (иначе skip)
+- [x] T015 Создать tests/contract/test_broker_port.py: каркас с параметризацией по адаптерам (ids=["memory","postgres"]) и пустым smoke-тестом на существование фикстуры
 
 **Checkpoint**: фундамент готов — `uv run pytest tests/contract -q` зелёный; user stories стартуют
 
@@ -63,13 +63,13 @@ Single project: `src/`, `tests/` от корня репозитория (см. p
 
 ### Tests for User Story 1 (сначала, обязаны падать)
 
-- [ ] T016 [P] [US1] Тест в tests/contract/test_broker_port.py::TestEnqueue: (а) enqueue → строка status=queued, available_at<=now, attempts=0; (б) пересоздание брокера (memory: новый экземпляр над тем же состоянием / pg: новая сессия) — сообщение на месте и доступно (журнал=очередь, сценарий 1.2); (в) enqueue для незарегистрированного bot_slug — исключение (FK); (г) queue_depth==1 после постановки и ==0 для пустого бота (сценарий 1.1); (д) производительность: enqueue при глубине очереди 10 000 укладывается в бюджет 50 мс — время не растёт с глубиной (SC-004)
+- [x] T016 [P] [US1] Тест в tests/contract/test_broker_port.py::TestEnqueue: (а) enqueue → строка status=queued, available_at<=now, attempts=0; (б) пересоздание брокера (memory: новый экземпляр над тем же состоянием / pg: новая сессия) — сообщение на месте и доступно (журнал=очередь, сценарий 1.2); (в) enqueue для незарегистрированного bot_slug — исключение (FK); (г) queue_depth==1 после постановки и ==0 для пустого бота (сценарий 1.1); (д) производительность: enqueue при глубине очереди 10 000 укладывается в бюджет 50 мс — время не растёт с глубиной (SC-004)
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Реализовать src/gram_mq/adapters/memory/broker.py: InMemoryBroker — хранилище строк в памяти, реестр ботов, инжектируемый clock; методы enqueue (status=queued, available_at=clock.now(), attempts=0, max_attempts из настроек) и queue_depth (COUNT queued+leased по bot_slug, FR-009)
-- [ ] T018 [US1] Реализовать src/gram_mq/adapters/postgres/broker.py: PostgresBroker.enqueue (INSERT со значениями как в memory-адаптере) и queue_depth (SELECT COUNT(*) с частичным индексом bot_slug WHERE status IN ('queued','leased'))
-- [ ] T019 [US1] Прогнать `uv run pytest tests/contract -q` (in-memory зелёный; postgres skip без env), `uv run ruff check --fix . && uv run ruff format .`
+- [x] T017 [US1] Реализовать src/gram_mq/adapters/memory/broker.py: InMemoryBroker — хранилище строк в памяти, реестр ботов, инжектируемый clock; методы enqueue (status=queued, available_at=clock.now(), attempts=0, max_attempts из настроек) и queue_depth (COUNT queued+leased по bot_slug, FR-009)
+- [x] T018 [US1] Реализовать src/gram_mq/adapters/postgres/broker.py: PostgresBroker.enqueue (INSERT со значениями как в memory-адаптере) и queue_depth (SELECT COUNT(*) с частичным индексом bot_slug WHERE status IN ('queued','leased'))
+- [x] T019 [US1] Прогнать `uv run pytest tests/contract -q` (in-memory зелёный; postgres skip без env), `uv run ruff check --fix . && uv run ruff format .`
 
 **Checkpoint**: MVP — постановка и глубина работают независимо (quickstart.md п.3 smoke)
 
@@ -83,13 +83,13 @@ Single project: `src/`, `tests/` от корня репозитория (см. p
 
 ### Tests for User Story 2
 
-- [ ] T020 [P] [US2] Тесты в tests/contract/test_broker_port.py::TestClaim: (а) claim → status=leased, locked_by=worker_id, lease_expires_at=now+лиз(RQ-1); (б) повторный claim чужим worker_id при живом лизе не отдаёт строку; (в) пустая очередь → None; (г) справедливость: бот A — 1000 строк, B и C — по одной → первые 10 захватов содержат ≥2 ботов (SC-003)
+- [x] T020 [P] [US2] Тесты в tests/contract/test_broker_port.py::TestClaim: (а) claim → status=leased, locked_by=worker_id, lease_expires_at=now+лиз(RQ-1); (б) повторный claim чужим worker_id при живом лизе не отдаёт строку; (в) пустая очередь → None; (г) справедливость: бот A — 1000 строк, B и C — по одной → первые 10 захватов содержат ≥2 ботов (SC-003)
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] PostgresBroker.claim в src/gram_mq/adapters/postgres/broker.py: шаг 1 — выбор бота (ORDER BY last_claim_at NULLS FIRST FROM bot_claim_state semi-join доступные messages, RQ-4); шаг 2 — UPDATE messages SET leased-поля WHERE id IN (SELECT ... WHERE bot_slug=:b AND status='queued' AND available_at<=now() ORDER BY available_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING (RQ-5, без ветки истёкших — она в US3); обновить bot_claim_state.last_claim_at в той же транзакции
-- [ ] T022 [US2] InMemoryBroker.claim в src/gram_mq/adapters/memory/broker.py: блокировка экземпляра, fairness-ротация бот→строка, leased-поля через clock
-- [ ] T023 [US2] Прогнать сюит, ruff
+- [x] T021 [US2] PostgresBroker.claim в src/gram_mq/adapters/postgres/broker.py: шаг 1 — выбор бота (ORDER BY last_claim_at NULLS FIRST FROM bot_claim_state semi-join доступные messages, RQ-4); шаг 2 — UPDATE messages SET leased-поля WHERE id IN (SELECT ... WHERE bot_slug=:b AND status='queued' AND available_at<=now() ORDER BY available_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING (RQ-5, без ветки истёкших — она в US3); обновить bot_claim_state.last_claim_at в той же транзакции
+- [x] T022 [US2] InMemoryBroker.claim в src/gram_mq/adapters/memory/broker.py: блокировка экземпляра, fairness-ротация бот→строка, leased-поля через clock
+- [x] T023 [US2] Прогнать сюит, ruff
 
 **Checkpoint**: захват эксклюзивен и справедлив
 
@@ -103,12 +103,12 @@ Single project: `src/`, `tests/` от корня репозитория (см. p
 
 ### Tests for User Story 3
 
-- [ ] T024 [P] [US3] Тесты в tests/contract/test_broker_port.py::TestLeaseExpiry: (а) leased, clock.advance(лиз+ε) (pg: broker_lease_seconds=0.2 и sleep 0.3, RQ-8) → claim worker_id="w2" возвращает ту же строку с новым лизом; (б) живой лиз → строка не отдаётся (сценарий 3.2)
+- [x] T024 [P] [US3] Тесты в tests/contract/test_broker_port.py::TestLeaseExpiry: (а) leased, clock.advance(лиз+ε) (pg: broker_lease_seconds=0.2 и sleep 0.3, RQ-8) → claim worker_id="w2" возвращает ту же строку с новым лизом; (б) живой лиз → строка не отдаётся (сценарий 3.2)
 
 ### Implementation for User Story 3
 
-- [ ] T025 [US3] Расширить условие выбора в PostgresBroker.claim: OR (status='leased' AND lease_expires_at < now()) — прямой реклейм в новый leased без промежуточного статуса (RQ-5); то же в InMemoryBroker.claim
-- [ ] T026 [US3] Прогнать сюит, ruff
+- [x] T025 [US3] Расширить условие выбора в PostgresBroker.claim: OR (status='leased' AND lease_expires_at < now()) — прямой реклейм в новый leased без промежуточного статуса (RQ-5); то же в InMemoryBroker.claim
+- [x] T026 [US3] Прогнать сюит, ruff
 
 **Checkpoint**: принцип II конституции подтверждён тестом (переживание падения)
 
@@ -122,13 +122,13 @@ Single project: `src/`, `tests/` от корня репозитория (см. p
 
 ### Tests for User Story 4
 
-- [ ] T027 [P] [US4] Тесты в tests/contract/test_broker_port.py::TestOutcome: (а) ack (context["telegram_message_id"]="777") → status=sent, telegram_message_id=777, sent_at NOT NULL одной операцией; повторный ack отправленной строки → ValueError (RQ-9); (б) retry(delay=30, reason) → queued, available_at≈now+30, attempts+1, лиз сброшен; до истечения claim не отдаёт, после (clock.advance) отдаёт; (в) dead_letter(reason) → failed с error=reason; claim не возвращает; строка в журнале (сценарии 4.1–4.3)
+- [x] T027 [P] [US4] Тесты в tests/contract/test_broker_port.py::TestOutcome: (а) ack (context["telegram_message_id"]="777") → status=sent, telegram_message_id=777, sent_at NOT NULL одной операцией; повторный ack отправленной строки → ValueError (RQ-9); (б) retry(delay=30, reason) → queued, available_at≈now+30, attempts+1, лиз сброшен; до истечения claim не отдаёт, после (clock.advance) отдаёт; (в) dead_letter(reason) → failed с error=reason; claim не возвращает; строка в журнале (сценарии 4.1–4.3)
 
 ### Implementation for User Story 4
 
-- [ ] T028 [US4] PostgresBroker: ack — условный UPDATE ... WHERE id=:id AND status='leased' (RQ-9); retry — UPDATE в queued с available_at=now()+delay, attempts+1, сброс лиза; dead_letter — UPDATE в failed, error=reason, сброс лиза
-- [ ] T029 [US4] InMemoryBroker: эквиваленты трёх операций с той же семантикой
-- [ ] T030 [US4] Прогнать сюит, ruff
+- [x] T028 [US4] PostgresBroker: ack — условный UPDATE ... WHERE id=:id AND status='leased' (RQ-9); retry — UPDATE в queued с available_at=now()+delay, attempts+1, сброс лиза; dead_letter — UPDATE в failed, error=reason, сброс лиза
+- [x] T029 [US4] InMemoryBroker: эквиваленты трёх операций с той же семантикой
+- [x] T030 [US4] Прогнать сюит, ruff
 
 **Checkpoint**: полный жизненный цикл сообщения работает
 
@@ -142,12 +142,12 @@ Single project: `src/`, `tests/` от корня репозитория (см. p
 
 ### Tests for User Story 5
 
-- [ ] T031 [P] [US5] Тесты в tests/contract/test_broker_port.py::TestQueueDepth: (а) пустой бот → 0; (б) после enqueue → 1; после claim (leased) → всё ещё 1 (захваченное — недоставленное); (в) после ack → 0; (г) после dead_letter → 0 (failed не считается); (д) второй бот изолирован (сценарии 5.1–5.2, изоляция ботов)
+- [x] T031 [P] [US5] Тесты в tests/contract/test_broker_port.py::TestQueueDepth: (а) пустой бот → 0; (б) после enqueue → 1; после claim (leased) → всё ещё 1 (захваченное — недоставленное); (в) после ack → 0; (г) после dead_letter → 0 (failed не считается); (д) второй бот изолирован (сценарии 5.1–5.2, изоляция ботов)
 
 ### Implementation for User Story 5
 
-- [ ] T032 [US5] Если тесты вскрывают расхождение — привести реализации queue_depth обоих адаптеров к FR-009 (COUNT статусов queued+leased)
-- [ ] T033 [US5] Прогнать сюит, ruff
+- [x] T032 [US5] Если тесты вскрывают расхождение — привести реализации queue_depth обоих адаптеров к FR-009 (COUNT статусов queued+leased)
+- [x] T033 [US5] Прогнать сюит, ruff
 
 **Checkpoint**: наблюдаемость подтверждена
 
@@ -161,9 +161,9 @@ Single project: `src/`, `tests/` от корня репозитория (см. p
 
 ### Tests / Verification for User Story 6
 
-- [ ] T034 [US6] Убедиться, что все сценарии US1–US5 живут в одном параметризованном сюите (без дублей в отдельных файлах); при необходимости перенести в tests/contract/test_broker_port.py
-- [ ] T035 [US6] Проверить skip-поведение: без TEST_DATABASE_URL postgres-параметризация репортит skip, memory — проходит; прогон с TEST_DATABASE_URL (при наличии БД) по quickstart.md п.2
-- [ ] T036 [US6] Выполнить smoke из quickstart.md п.3 (постановка → глубина → захват → эксклюзивность → ack) — вывод smoke OK
+- [x] T034 [US6] Убедиться, что все сценарии US1–US5 живут в одном параметризованном сюите (без дублей в отдельных файлах); при необходимости перенести в tests/contract/test_broker_port.py
+- [x] T035 [US6] Проверить skip-поведение: без TEST_DATABASE_URL postgres-параметризация репортит skip, memory — проходит; прогон с TEST_DATABASE_URL (при наличии БД) по quickstart.md п.2
+- [x] T036 [US6] Выполнить smoke из quickstart.md п.3 (постановка → глубина → захват → эксклюзивность → ack) — вывод smoke OK
 
 **Checkpoint**: обе реализации эквивалентны по одному сюиту
 
@@ -171,10 +171,15 @@ Single project: `src/`, `tests/` от корня репозитория (см. p
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T037 [P] Финальные гейты: `uv run ruff check . && uv run ruff format --check .` — чисто; `uv run mypy .` — strict, 0 ошибок; `uv run coverage run -m pytest && uv run coverage report --fail-under=80` — порог пройден, каждый публичный метод порта покрыт хотя бы одним тестом
-- [ ] T038 Полная валидация по quickstart.md: пункты 1 (memory-сюит), 2 (postgres при env), 4 (падение воркера), 5 (справедливость) — все зелёные
-- [ ] T039 Обновить README.md: раздел о модуле очереди (как запустить контрактные тесты, как поднять тестовую БД) — без деталей реализации
-- [ ] T040 Ревью кода всей фичи целиком: полный diff реализации всех user stories; коммит фичи — один раз, после одобрения ревьюером
+- [x] T037 [P] Финальные гейты: `uv run ruff check . && uv run ruff format --check .` — чисто; `uv run mypy .` — strict, 0 ошибок; `uv run coverage run -m pytest && uv run coverage report --fail-under=80` — порог пройден, каждый публичный метод порта покрыт хотя бы одним тестом
+- [x] T038 Полная валидация по quickstart.md: пункты 1 (memory-сюит), 2 (postgres при env), 4 (падение воркера), 5 (справедливость) — все зелёные
+- [x] T039 Обновить README.md: раздел о модуле очереди (как запустить контрактные тесты, как поднять тестовую БД) — без деталей реализации
+- [x] T041 [P] Добавить .env.example в корень: GRAMMQ_-переменные с плейсхолдерами, зеркалящими src/gram_mq/settings.py (реальный .env уже в .gitignore); ссылка на файл в quickstart.md (cp .env.example .env)
+- [x] T042 Добавить префикс объектов БД из настроек: TableNaming(GRAMMQ_TABLE_PREFIX, default gmq) + хелпер table_name() в settings.py; динамические __tablename__/индексы/enum в моделях; параметризованная миграция 0001; TRUNCATE в conftest по table_name(); документация (data-model RQ-11, .env.example, README); префикс фиксируется первой миграцией (RQ-11)
+- [x] T043 [P] Добавить dev-команды через [project.scripts] (src/gram_mq/devtools.py): uv run test (контрактный сюит, полный вывод), uv run lint (ruff check + format check), uv run typecheck (mypy strict по src/tests/alembic); упомянуть в README
+- [x] T044 [P] Добавить uv run check — единый гейт: ruff (check + format), затем mypy strict (src/gram_mq/devtools.py, [project.scripts]); обновить README
+- [x] T045 Тестовое окружение через .env.test: класс TestDatabase(BaseSettings) в src/gram_mq/settings.py — GRAMMQ_TEST_DATABASE_URL: SecretStr | None (CI-алиас TEST_DATABASE_URL), env-файл через GRAMMQ_TEST_ENV_FILE с фолбэком ./.env.test, реальные env-переменные приоритетнее файла; conftest берёт URL через TestDatabase (тесты не читают deploy-.env — стандарт Testing); .env.test.example в корне, .env.test в .gitignore; quickstart и README обновлены
+- [x] T040 Ревью кода всей фичи целиком: полный diff реализации всех user stories; коммит фичи — один раз, после одобрения ревьюером — одобрено 2026-10-04 (один коммит, текст передан автору)
 
 ---
 
@@ -244,3 +249,10 @@ Task T022: InMemoryBroker.claim в src/gram_mq/adapters/memory/broker.py
 - [Story] метки связывают задачи со stories спеки (трассируемость FR/SC ↔ задачи)
 - Ревью всей фичи целиком, а не отдельных задач: коммит — один раз после ревью и одобрения всей реализации (T040)
 - Референс при затруднениях: ветка main_copy (ports/broker.py, adapters/postgres/broker.py, adapters/memory/broker.py) — сверять семантику, не копировать вслепую (референс не содержит fairness-таблицы и реклейма в claim)
+
+---
+
+## Phase 10: Convergence
+
+- [x] T046 Согласовать формулировку Testing-стандарта конституции с фактическим механизмом гейта тестовой БД (основной канал GRAMMQ_TEST_DATABASE_URL, CI-алиас TEST_DATABASE_URL, файл ./.env.test через GRAMMQ_TEST_ENV_FILE) — PATCH через $speckit-constitution per Constitution:Engineering Standards>Testing (partial) — выполнено: конституция v2.4.3
+- [x] T047 Исправить quickstart.md п.2: ручной накат миграций в тестовую БД — через GRAMMQ_DATABASE_URL (alembic/env.py читает GRAMMQ_-настройки, TEST_DATABASE_URL туда не транслируется), например GRAMMQ_DATABASE_URL=postgresql+asyncpg://gram:gram@localhost:5432/gram_mq_test uv run alembic upgrade head per quickstart §2 (partial) — выполнено; заодно исправлена устаревшая ссылка «Требования к тестам» → Engineering Standards → Testing; позднее ручная команда убрана из §2 как лишняя (сюит применяет схему сам)

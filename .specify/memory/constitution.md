@@ -1,24 +1,5 @@
 # Gram-MQ Constitution
 
-<!--
-Sync Impact Report (temporary note for review — remove before committing)
-- Version change: 2.3.0 → 2.4.0 (MINOR: a governance norm materially
-  changed — the artifact-language mandate was redefined from English to
-  Russian; no principle or engineering standard was touched)
-- Modified principles: none
-- Modified standards: none
-- Modified governance: the artifact-language bullet — Spec Kit feature
-  artifacts (spec.md, plan.md, research.md, data-model.md, contracts/,
-  quickstart.md, tasks.md, checklists) are now written in Russian, the
-  project's working language; code, identifiers, commit messages, and the
-  constitution itself remain in English
-- Added sections: none
-- Removed sections: none
-- Follow-up TODOs: none. Resolves analyze finding C1 for feature
-  001-broker-port-postgres (its Russian artifacts become compliant;
-  no artifact translation is needed)
--->
-
 ## Core Principles
 
 ### I. Ports and adapters, not specific technologies
@@ -136,8 +117,10 @@ clean environment and silently diverges between dev and prod.
 - Test coverage never drops below 80%.
 - Unit tests use the in-memory broker and a fake Telegram sender; real
   secrets and `.env` are never used in tests.
-- DB tests run only when `TEST_DATABASE_URL` is set; otherwise they are
-  skipped.
+- DB tests run only when a test database is configured —
+  `GRAMMQ_TEST_DATABASE_URL` (CI alias `TEST_DATABASE_URL`) or
+  `./.env.test` via `GRAMMQ_TEST_ENV_FILE`; otherwise they are skipped.
+  Tests never read the deploy env-file.
 - Fast tests must cover port behavior, key/OTP hashing, and slug
   generation.
 
@@ -204,7 +187,7 @@ tests — reads configuration the same way.
 ### Stack and deployment (v1)
 
 - Stack: Python 3.12+, uv, FastAPI + Pydantic v2 + pydantic-settings,
-  SQLAlchemy 2 (async) + asyncpg + Alembic, PostgreSQL 16 — co-located
+  SQLAlchemy 2 (async) + asyncpg + Alembic, PostgreSQL 17 — co-located
   with the services or on a dedicated instance reachable over TCP
   (`sslmode=require` where possible), aiogram 3 (`Bot` only), React +
   TypeScript + Vite + MUI (MIT).
@@ -212,8 +195,10 @@ tests — reads configuration the same way.
   coverage.
 - Deployment: systemd (api + worker as separate units), uv venv on the
   host, no Docker or Compose.
-- The queue is the journal: `PostgresBroker` works on the `messages`
-  table; there is no separate broker in v1.
+- The queue is the journal: `PostgresBroker` works on the single messages
+  journal table; all DB object names are prefixed via `GRAMMQ_TABLE_PREFIX`
+  (default `gmq`, e.g. `gmq_messages`), fixed when the first migration is
+  applied; there is no separate broker in v1.
 - `bot_slug` — a human-readable (slug-safe ASCII) single bot identifier
   across the inbound API, `messages`, and the config file name.
 - Runtime configuration is governed by the Configuration standard (see
@@ -247,4 +232,4 @@ tests — reads configuration the same way.
 - The analyze and converge commands only read the constitution and never
   modify it.
 
-**Version**: 2.4.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-10-04
+**Version**: 2.4.3 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-10-04
