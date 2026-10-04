@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description (translated from Russian): "Outgoing message queue behind a broker port: the domain contract BrokerPort (enqueue, claim, ack, retry, dead_letter, queue_depth), PostgresBroker on the messages table, an in-memory adapter for tests, contract tests against both adapters, Alembic migrations."
+**Input**: User description: "Outgoing message queue behind a broker port: the domain contract BrokerPort (enqueue, claim, ack, retry, dead_letter, queue_depth), PostgresBroker on the messages table, an in-memory adapter for tests, contract tests against both adapters, Alembic migrations."
 
 ## User Scenarios & Testing *(mandatory)*
 

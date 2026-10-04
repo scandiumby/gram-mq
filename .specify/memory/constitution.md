@@ -2,27 +2,26 @@
 
 <!--
 Sync Impact Report (temporary note for review — remove before committing)
-- Version change: 2.1.0 → 2.2.0 (MINOR: five engineering MUST standards
-  added. The whole amendment is still uncommitted, so the translation and
-  the artifact-language rule fold into the same bump)
-- Modified principles: none in substance (I–IV unchanged; the document is
-  translated from Russian to English, titles re-worded in English)
-- Added sections: "Engineering Standards" — Asynchrony, Type checking,
-  Database migrations, Testing, Dependency licenses, Stack and
-  deployment (v1)
-- Added norms (Governance): the constitution and all Spec Kit artifacts
-  (specs, plans, tasks, checklists) are written in English
-- Removed sections: draft "Invariants" section, "Technical constraints
-  (v1)" and "Test requirements" — merged without semantic change into
-  "Engineering Standards" (the alembic upgrade head line moved to
-  "Database migrations", test environment rules to "Testing")
-- Minor edits: Governance gained the equal-force rule for principles and
-  standards; gate wording changed from "MUST-principle" to "MUST-norm";
-  the dev-tools line extended with mypy --strict and coverage
-- Deferred TODOs: the repo LICENSE is GPL-3.0. The dependency-licenses
-  standard (MIT-compatible dependencies) is compatible with this, but if
-  the project is to be distributed under MIT, the LICENSE file must be
-  replaced in a separate commit — outside the constitution's scope
+- Version change: 2.2.0 → 2.3.0 (MINOR: a new Configuration standard
+  added; "Stack and deployment (v1)" materially expanded)
+- Modified principles: none (Core Principles I–IV unchanged)
+- Modified standards: "Stack and deployment (v1)" — PostgreSQL 16 may now
+  be co-located with the services or on a dedicated instance reachable
+  over TCP (sslmode=require preferred); a cross-reference to the new
+  Configuration standard added (pydantic-settings is no longer only a
+  stack mention)
+- Added sections: Engineering Standards > "Configuration" — GRAMMQ_-prefixed
+  BaseSettings subclasses are the only settings channel; non-secret
+  defaults are versioned in code; secret-bearing fields are required,
+  typed SecretStr, and fail fast; per-host overrides and secrets live in
+  a single env-file outside the deploy tree, located via GRAMMQ_ENV_FILE
+  (one systemd pointer line in production, ./.env fallback locally),
+  never committed, never deployed; api and worker share the file;
+  TCP-with-password is the DB default, Unix-socket peer auth is an
+  allowed co-located optimization; real env vars take precedence over the
+  env-file; bot tokens stay in bots/.env-<bot_slug> per Principle III
+- Removed sections: none
+- Follow-up TODOs: none
 -->
 
 ## Core Principles
@@ -162,11 +161,58 @@ Rationale: a copyleft or unlicensed dependency restricts distribution
 and embedding of the project; permissive MIT-compatible licenses carry
 no such risk.
 
+### Configuration
+
+All runtime configuration is loaded exclusively through pydantic-settings
+classes.
+
+- Settings live in `BaseSettings` subclasses with the shared `GRAMMQ_`
+  environment prefix. Direct `os.environ` / `os.getenv` reads in runtime
+  code are forbidden; one-off CLI scripts are not runtime code (the same
+  boundary as in Asynchrony).
+- Defaults for non-secret values live in the settings classes and are
+  versioned in code. A default is a value that is true in every
+  environment; values that differ between hosts or environments are
+  passed through the environment, not by editing a default.
+- Secret-bearing fields (first of all `GRAMMQ_DATABASE_URL` carrying a
+  password for a remote DB) are required, have no defaults, and are typed
+  as `SecretStr`: `repr()` of the settings must not reveal a secret in
+  logs or error messages. A missing value aborts the process at startup
+  (fail-fast).
+- Per-host overrides and secrets live in a single env-file outside the
+  deploy tree (e.g. `/etc/gram-mq/.env`). Its path comes from the
+  `GRAMMQ_ENV_FILE` variable; in production this is the single
+  `Environment=` line of the systemd unit (a pointer, no values),
+  locally the fallback is `./.env`. The file is never committed and
+  never deployed; deploy and backup procedures neither touch it nor
+  include it in archives. In production the file usually contains at
+  least `GRAMMQ_DATABASE_URL`.
+- api and worker read the same env-file (different fields); separate
+  `api.env` / `worker.env` files are not created, and configuration
+  values are not written into systemd units.
+- DB connectivity does not assume locality. The default is a TCP
+  connection with the password inside `GRAMMQ_DATABASE_URL` (a dedicated
+  instance; `sslmode=require` where possible). When the DB is co-located,
+  a Unix-socket connection with local peer auth (`pg_hba.conf`, a
+  dedicated user) and a passwordless URL is allowed — an optimization of
+  a specific host, not the norm.
+- Source priority is the pydantic-settings default: real environment
+  variables take precedence over the env-file.
+- Bot tokens live in `bots/.env-<bot_slug>` files under Principle III and
+  do not pass through the settings classes.
+
+Rationale: versioned defaults (code) plus per-host secrets (one file
+outside the deploy tree) leave no secret reachable through git, deploy
+scripts, or backups, while every entry point — api, worker, CLI, Alembic,
+tests — reads configuration the same way.
+
 ### Stack and deployment (v1)
 
 - Stack: Python 3.12+, uv, FastAPI + Pydantic v2 + pydantic-settings,
-  SQLAlchemy 2 (async) + asyncpg + Alembic, PostgreSQL 16 on the host,
-  aiogram 3 (`Bot` only), React + TypeScript + Vite + MUI (MIT).
+  SQLAlchemy 2 (async) + asyncpg + Alembic, PostgreSQL 16 — co-located
+  with the services or on a dedicated instance reachable over TCP
+  (`sslmode=require` where possible), aiogram 3 (`Bot` only), React +
+  TypeScript + Vite + MUI (MIT).
 - Development tools: ruff, mypy --strict, pytest + pytest-asyncio,
   coverage.
 - Deployment: systemd (api + worker as separate units), uv venv on the
@@ -175,6 +221,9 @@ no such risk.
   table; there is no separate broker in v1.
 - `bot_slug` — a human-readable (slug-safe ASCII) single bot identifier
   across the inbound API, `messages`, and the config file name.
+- Runtime configuration is governed by the Configuration standard (see
+  Engineering Standards): pydantic-settings classes with defaults in code
+  and a single env-file outside the deploy tree.
 
 ## Governance
 
@@ -201,4 +250,4 @@ no such risk.
 - The analyze and converge commands only read the constitution and never
   modify it.
 
-**Version**: 2.2.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-09-27
+**Version**: 2.3.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-10-04
