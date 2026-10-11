@@ -222,6 +222,27 @@ class TestOutcome:
         assert retried is not None
         assert retried.context["attempts"] == 1
 
+    async def test_retry_rate_limit_pause_keeps_attempts(
+        self,
+        make_broker: Callable[..., SeededBroker],
+    ) -> None:
+        broker = make_broker()
+        await broker.register_bot("bot-a")
+        await broker.enqueue(make_message())
+        delivery = await broker.claim(worker_id="w1")
+        assert delivery is not None
+
+        await broker.retry(
+            delivery,
+            delay=timedelta(seconds=0),
+            reason="rate_limited",
+            count_attempt=False,
+        )
+
+        paused = await broker.claim(worker_id="w2")
+        assert paused is not None
+        assert paused.context["attempts"] == 0  # a pause is not an attempt
+
     async def test_retry_requires_leased_row(self, broker: SeededBroker) -> None:
         await broker.register_bot("bot-a")
         await broker.enqueue(make_message())

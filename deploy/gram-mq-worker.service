@@ -1,0 +1,19 @@
+[Unit]
+Description=gram-mq delivery worker (spec 003)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gram-mq
+Group=gram-mq
+# Same single env-file pointer as the API unit; the worker additionally
+# needs filesystem access to bots/ (0700, owned by this user).
+Environment=GRAMMQ_ENV_FILE=/etc/gram-mq/.env
+Environment=GRAMMQ_BOTS_DIR=/var/lib/gram-mq/bots
+ExecStart=/opt/gram-mq/.venv/bin/gram-mq-worker
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

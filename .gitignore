@@ -219,3 +219,5 @@ __marimo__/
 .streamlit/secrets.toml
 .idea/
 .zcode/
+# Bot token files (constitution III: never committed)
+bots/

@@ -1,6 +1,6 @@
 [project]
 name = "gram-mq"
-version = "0.1.0"
+version = "0.2.0"
 description = "Outbound Telegram message queue proxy"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
@@ -10,6 +10,10 @@ dependencies = [
     "asyncpg",
     "alembic",
     "pydantic-settings>=2.0",
+    "fastapi",
+    "uvicorn",
+    "argon2-cffi",
+    "aiogram>=3",
 ]
 
 [dependency-groups]
@@ -19,6 +23,7 @@ dev = [
     "ruff",
     "mypy",
     "coverage",
+    "httpx",
 ]
 
 [project.scripts]
@@ -26,6 +31,10 @@ test = "gram_mq.devtools:test"
 lint = "gram_mq.devtools:lint"
 typecheck = "gram_mq.devtools:typecheck"
 check = "gram_mq.devtools:check"
+migrate = "gram_mq.devtools:migrate"
+gram-mq = "gram_mq.cli.main:main"
+gram-mq-api = "gram_mq.api.main:main"
+gram-mq-worker = "gram_mq.worker.main:main"
 
 [build-system]
 requires = ["hatchling"]

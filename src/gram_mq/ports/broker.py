@@ -76,9 +76,18 @@ class BrokerPort(Protocol):
         """
         ...
 
-    async def retry(self, delivery: Delivery, delay: timedelta, reason: str) -> None:
+    async def retry(
+        self,
+        delivery: Delivery,
+        delay: timedelta,
+        reason: str,
+        *,
+        count_attempt: bool = True,
+    ) -> None:
         """Return the row to queued: available_at=now()+delay,
-        attempts+=1, ownership released, error=reason.
+        ownership released, error=reason. attempts+=1 unless
+        count_attempt=False — reserved for rate-limit pauses (429):
+        waiting for retry_after is not a failed attempt of the message.
 
         Raises IllegalDeliveryStateError when the row is not leased.
         """

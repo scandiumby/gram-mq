@@ -29,7 +29,13 @@ from gram_mq.adapters.memory.broker import InMemoryBroker, MemoryStore
 # Import-time coverage: models and settings execute their declarations on
 # import in every entry point (api, worker, alembic); the contract suite
 # exercises the same import path for the memory adapter.
-from gram_mq.models import base, bots, claim_state, messages  # noqa: F401
+from gram_mq.models import (  # noqa: F401
+    api_keys,
+    base,
+    bots,
+    claim_state,
+    messages,
+)
 from gram_mq.ports.broker import BrokerPort
 from gram_mq.settings import TestDatabase, table_name
 

@@ -15,7 +15,10 @@ from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_LEASE_SECONDS = 60
-DEFAULT_MAX_ATTEMPTS = 5
+# 20, not 5: rate-limit pauses (429) no longer consume attempts, but a
+# burst aimed at one chat still earns real failures on retry_after
+# windows — a deeper buffer keeps spikes deliverable instead of failed.
+DEFAULT_MAX_ATTEMPTS = 20
 DEFAULT_TABLE_PREFIX = "gmq"
 
 
@@ -76,6 +79,11 @@ class Settings(BaseSettings):
     database_url: SecretStr
     broker_lease_seconds: int = DEFAULT_LEASE_SECONDS
     broker_max_attempts: int = DEFAULT_MAX_ATTEMPTS
+    bots_dir: str = "./bots"
+    api_host: str = "127.0.0.1"
+    api_port: int = 8080
+    worker_poll_interval: float = 1.0
+    worker_backoff_base_seconds: float = 5.0
 
 
 @lru_cache(maxsize=1)

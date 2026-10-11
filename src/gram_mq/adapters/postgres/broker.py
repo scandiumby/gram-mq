@@ -180,16 +180,25 @@ class PostgresBroker:
         if result != 1:
             raise IllegalDeliveryStateError(f"not leased: {delivery.id}")
 
-    async def retry(self, delivery: Delivery, delay: timedelta, reason: str) -> None:
+    async def retry(
+        self,
+        delivery: Delivery,
+        delay: timedelta,
+        reason: str,
+        *,
+        count_attempt: bool = True,
+    ) -> None:
+        values: dict[str, Any] = {
+            "status": MessageStatus.queued,
+            "available_at": func.now() + delay,
+            "error": reason,
+        }
+        if count_attempt:
+            values["attempts"] = Message.attempts + 1
         result = await self._transition(
             delivery.id,
             statuses=[MessageStatus.leased],
-            values={
-                "status": MessageStatus.queued,
-                "available_at": func.now() + delay,
-                "attempts": Message.attempts + 1,
-                "error": reason,
-            },
+            values=values,
         )
         if result != 1:
             raise IllegalDeliveryStateError(f"not leased: {delivery.id}")

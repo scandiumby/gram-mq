@@ -121,13 +121,21 @@ class InMemoryBroker(BrokerPort):
         row.sent_at = moment
         self._release(row)
 
-    async def retry(self, delivery: Delivery, delay: timedelta, reason: str) -> None:
+    async def retry(
+        self,
+        delivery: Delivery,
+        delay: timedelta,
+        reason: str,
+        *,
+        count_attempt: bool = True,
+    ) -> None:
         row = self._by_id(delivery.id)
         if row is None or row.status != LEASED:
             raise IllegalDeliveryStateError(f"not leased: {delivery.id}")
         row.status = QUEUED
         row.available_at = self._now() + delay
-        row.attempts += 1
+        if count_attempt:
+            row.attempts += 1
         row.error = reason
         self._release(row)
 

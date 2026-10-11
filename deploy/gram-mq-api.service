@@ -1,0 +1,18 @@
+[Unit]
+Description=gram-mq inbound API (spec 003)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gram-mq
+Group=gram-mq
+# The env-file is a pointer only — no values in the unit (Constitution,
+# Configuration). GRAMMQ_DATABASE_URL lives in /etc/gram-mq/.env.
+Environment=GRAMMQ_ENV_FILE=/etc/gram-mq/.env
+ExecStart=/opt/gram-mq/.venv/bin/gram-mq-api
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

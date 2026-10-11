@@ -52,6 +52,11 @@ def test() -> None:
     raise SystemExit(_call("pytest", ["-v"]))
 
 
+def migrate() -> None:
+    """Apply Alembic migrations to head (reads GRAMMQ_DATABASE_URL)."""
+    raise SystemExit(_step("alembic", ["upgrade", "head"]))
+
+
 def lint() -> None:
     """ruff check + format check."""
     code = _step("ruff", ["check", "."])

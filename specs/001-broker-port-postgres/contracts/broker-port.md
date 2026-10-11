@@ -45,9 +45,12 @@ class BrokerPort(Protocol):
         (delivery.context["telegram_message_id"]) + sent_at одной
         транзакцией. Не-leased строка/чужой владелец — ValueError."""
 
-    async def retry(self, delivery: Delivery, delay: timedelta, reason: str) -> None:
+    async def retry(self, delivery: Delivery, delay: timedelta, reason: str,
+                     *, count_attempt: bool = True) -> None:
         """Вернуть в очередь: status=queued, available_at=now()+delay,
-        attempts+=1, лиз сброшен, error=reason."""
+        лиз сброшен, error=reason. attempts+=1, КРОМЕ count_attempt=False
+        — режим паузы rate-limit (429): ожидание retry_after не является
+        неудавшейся попыткой сообщения (дополнение 2026-10-11, фича 003)."""
 
     async def dead_letter(self, delivery: Delivery, reason: str) -> None:
         """Похоронить: status=failed, error=reason, лиз сброшен.
