@@ -1,0 +1,20 @@
+# Never bake secrets, dev state, or docs into the image; the runtime
+# reads configuration from real env vars / a mounted env-file instead.
+.git
+.idea
+.venv
+.zcode
+.zcodeignore
+.specify
+specs
+tests
+bots
+.env
+.env.test
+.coverage
+.mypy_cache
+.pytest_cache
+.ruff_cache
+__pycache__
+**/__pycache__
+*.pyc

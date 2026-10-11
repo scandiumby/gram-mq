@@ -1,4 +1,4 @@
-"""Single-container launcher for PaaS deploys (Amvera): API + worker.
+"""Single-container launcher for PaaS deploys: API + worker.
 
 Runs the two standard entry points (`python -m gram_mq.api`,
 `python -m gram_mq.worker`) as subprocesses and stops both when either
