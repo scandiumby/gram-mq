@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from gram_mq.api.auth import KEY_HASH_MAX_LENGTH, PREFIX_LENGTH
 from gram_mq.models.base import Base
 from gram_mq.settings import table_name
 
@@ -18,8 +19,8 @@ from gram_mq.settings import table_name
 class ApiKey(Base):
     __tablename__ = table_name("api_keys")
 
-    prefix: Mapped[str] = mapped_column(String(12), primary_key=True)
-    key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    prefix: Mapped[str] = mapped_column(String(PREFIX_LENGTH), primary_key=True)
+    key_hash: Mapped[str] = mapped_column(String(KEY_HASH_MAX_LENGTH), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

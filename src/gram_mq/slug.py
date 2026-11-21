@@ -11,7 +11,7 @@ import re
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from gram_mq.cli.dune_words import DUNE_WORDS
+from gram_mq.dune_words import DUNE_WORDS
 
 MAX_ATTEMPTS = 50
 SLUG_RE = re.compile(r"^[0-9]{4}(-[a-z][a-z-]{0,11}){2}$")

@@ -84,6 +84,20 @@ class Settings(BaseSettings):
     api_port: int = 8080
     worker_poll_interval: float = 1.0
     worker_backoff_base_seconds: float = 5.0
+    # Two-stage key bootstrap (spec 005): the activation endpoint is off
+    # unless explicitly enabled, and the activation material (prefix +
+    # pre-computed Argon2id hash from `gram-mq key prepare`) is a secret
+    # without a default — absent material makes a enabled endpoint refuse.
+    key_bootstrap_enabled: bool = False
+    key_bootstrap_material: SecretStr | None = None
+    # Bot management window (spec 006): creation/revoke endpoints are off
+    # unless explicitly enabled; the full bot token rides the windowed
+    # secret setting only (plaintext never crosses HTTP), and the master
+    # key encrypts the token halves permanently (its loss makes every
+    # encrypted bot "not ready" — recovery is re-issuing tokens).
+    bot_bootstrap_enabled: bool = False
+    bot_bootstrap_token: SecretStr | None = None
+    token_master_key: SecretStr | None = None
 
 
 @lru_cache(maxsize=1)

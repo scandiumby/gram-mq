@@ -40,15 +40,31 @@ Every accepted message must survive the crash of any process.
 
 ### III. No plaintext secrets in the system
 
-- There are no secrets in the DB — only hashes: API keys and passwords —
-  Argon2id; OTP and refresh tokens — HMAC-SHA256.
-- The bot token is stored only in `bots/.env-<bot_slug>` on disk; never
-  in SQL, API responses, or the dashboard. No file — no messages are sent
-  by that bot.
-- A plaintext API key never crosses HTTP: the key is issued only by a CLI
-  on the server and printed to the terminal once. API and dashboard
-  endpoints return only `prefix` + `key_hash`. Revocation — `revoked_at`;
-  rotation — a new key plus revoking the old one.
+- There are no plaintext secrets in the DB: API keys and passwords are
+  stored as Argon2id hashes, OTP and refresh tokens as HMAC-SHA256. The
+  single exception is the encrypted table half of a bot token (next
+  bullet), which without the master key is not a secret.
+- The bot token is stored split into two incomplete halves, each encrypted
+  with AESGCM under a dedicated token master key: the file half (numeric
+  id + ":" + the first 4 characters of the secret part) in
+  `bots/.env-<bot_slug>`, the table half (the rest of the secret part) in
+  the bots table. Both halves of a pair share a random pairing nonce used
+  as AEAD associated data, so mixing halves of different bots or
+  generations fails decryption locally, before any Telegram call. Neither
+  store alone yields a usable token. The plaintext token exists only in
+  the bootstrap setting during a creation/rotation window and briefly in
+  process memory — never in SQL in the clear, in API responses, in logs,
+  or on the dashboard. No decryptable pair — no messages are sent by that
+  bot.
+- A plaintext API key never crosses HTTP: keys are issued only by a CLI —
+  `gram-mq key add` where server shell access exists, or `gram-mq key
+  prepare` run locally, with server registration through an activation
+  endpoint that is disabled by default and accepts only the pre-computed
+  hash (shell-less deploys). Either way the plaintext is printed to the
+  terminal exactly once and never leaves the operator's machine; the
+  server receives only prefix + hash. API and dashboard endpoints return
+  only `prefix` + `key_hash`. Revocation — `revoked_at`; rotation — a new
+  key plus revoking the old one.
 - The access token lives in an httpOnly cookie, not in localStorage. OTP
   is never logged.
 - The `bots/` directory is never committed (`.gitignore`).
@@ -64,8 +80,12 @@ Every accepted message must survive the crash of any process.
   JWT issuance, cookies, refresh, and API keys do not depend on the
   provider.
 - The first user is created by an administrator (a CLI/bootstrap
-  mechanism); there is no HTTP self-registration. Registering bots over
-  HTTP is forbidden — CLI on the server only.
+  mechanism); there is no HTTP self-registration. Bot registration runs
+  through a bootstrap endpoint that is disabled by default and takes the
+  full token from a secret setting — the request body carries no secrets —
+  or through the CLI wizard; both paths write the same encrypted halves.
+  The endpoint is enabled only for a creation/rotation window, exactly
+  like the API key activation endpoint.
 
 ## Engineering Standards
 
@@ -176,8 +196,13 @@ classes.
   a specific host, not the norm.
 - Source priority is the pydantic-settings default: real environment
   variables take precedence over the env-file.
-- Bot tokens live in `bots/.env-<bot_slug>` files under Principle III and
-  do not pass through the settings classes.
+- Bot tokens do not pass through the settings classes, with one windowed
+  exception: a secret setting carries the full token of the bot being
+  created or rotated — set for the operation, read by the bootstrap
+  endpoint, cleared afterwards. Persistent token storage is governed by
+  Principle III (encrypted halves in the file and the bots table); the
+  token master key is a SecretStr setting with no default, used for
+  nothing but those halves.
 
 Rationale: versioned defaults (code) plus per-host secrets (one file
 outside the deploy tree) leave no secret reachable through git, deploy
@@ -232,4 +257,4 @@ tests — reads configuration the same way.
 - The analyze and converge commands only read the constitution and never
   modify it.
 
-**Version**: 2.4.3 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-10-04
+**Version**: 3.0.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-10-19

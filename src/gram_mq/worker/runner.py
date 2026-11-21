@@ -16,7 +16,7 @@ from datetime import timedelta
 
 from gram_mq.ports.broker import BrokerPort, Delivery
 from gram_mq.ports.telegram import TelegramSender, TelegramSendError
-from gram_mq.worker.bot_config import BotConfig
+from gram_mq.worker.bot_config import BotConfig, NotReady, NotRegistered
 
 logger = logging.getLogger("gram_mq.worker")
 
@@ -62,18 +62,31 @@ async def process_delivery(
     max_attempts: int,
 ) -> None:
     """Handle one claimed delivery end-to-end (send + outcome)."""
-    token = await bot_config.token_for(delivery.bot_slug)
-    if token is None:
-        # Missing or damaged config file: a normal retryable send error
-        # (FR-007/FR-008, MVP default) — the file may reappear.
+    lookup = await bot_config.token_for(delivery.bot_slug)
+    if isinstance(lookup, NotRegistered):
+        # Revoked or unknown bot (spec 006, US3): permanent by nature —
+        # a deleted bot does not "reappear" — so dead-letter immediately
+        # instead of burning the retry budget (FR-015).
+        await broker.dead_letter(delivery, reason="bot not registered")
+        logger.warning(
+            "failed id=%s bot=%s: bot not registered",
+            delivery.id,
+            delivery.bot_slug,
+        )
+        return
+    if isinstance(lookup, NotReady):
+        # Registered but unreadable halves (no file, NULL columns, no
+        # master key, tamper, generation mismatch): a normal retryable
+        # state — the file or the key setting may reappear (FR-012).
         await _retry_or_fail(
             delivery,
             broker=broker,
             delay=timedelta(seconds=backoff_base),
-            reason="bot token file missing or invalid",
+            reason="bot config unreadable (file/keys)",
             max_attempts=max_attempts,
         )
         return
+    token = lookup.token
 
     try:
         telegram_id = await sender.send_text(

@@ -24,7 +24,7 @@ from gram_mq.api.app import create_app
 from gram_mq.api.auth import ApiKeyVerifier, hash_key
 from gram_mq.ports.telegram import TelegramSender
 from gram_mq.settings import table_name
-from gram_mq.worker.bot_config import BotConfig
+from gram_mq.worker.bot_config import BotConfig, Ready
 from gram_mq.worker.runner import process_delivery
 from tests.conftest import TEST_DATABASE_URL
 
@@ -54,8 +54,8 @@ class StaticBotConfig(BotConfig):
     def __init__(self, token: str) -> None:
         self.token = token
 
-    async def token_for(self, bot_slug: str) -> str | None:
-        return self.token
+    async def token_for(self, bot_slug: str) -> Ready:
+        return Ready(self.token)
 
 
 async def _truncate() -> None:

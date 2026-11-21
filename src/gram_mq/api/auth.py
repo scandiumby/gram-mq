@@ -22,7 +22,11 @@ from argon2.exceptions import VerifyMismatchError
 KEY_PREFIX = "gmq_"
 KEY_BODY_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 KEY_RE = re.compile(r"^gmq_[A-Za-z0-9_-]{43}$")
+PREFIX_RE = re.compile(r"^gmq_[A-Za-z0-9_-]{8}$")
 PREFIX_LENGTH = 12
+#: Single source of the ApiKey column widths (models/api_keys.py sizes
+#: String(...) from these); parse_key_material rejects anything longer.
+KEY_HASH_MAX_LENGTH = 128
 
 #: Repository lookup result: (key_hash, revoked) or None when unknown.
 KeyRecord = tuple[str, bool]
@@ -44,6 +48,35 @@ def generate_api_key() -> tuple[str, str]:
 def hash_key(key: str, hasher: PasswordHasher | None = None) -> str:
     """Argon2id-encoded hash of the full key (CLI side, not runtime code)."""
     return (hasher or PasswordHasher()).hash(key)
+
+
+def format_key_material(prefix: str, key_hash: str) -> str:
+    """One-line activation value: `<prefix>:<key_hash>` (spec 005, US1).
+
+    The single copy-pasteable unit the operator transfers from the local
+    terminal into GRAMMQ_KEY_BOOTSTRAP_MATERIAL; `:` appears in neither
+    part, so `parse_key_material` splits unambiguously.
+    """
+    return f"{prefix}:{key_hash}"
+
+
+def parse_key_material(value: str) -> tuple[str, str] | None:
+    """Validate and split an activation value; None on any violation.
+
+    Exactly one `:`; prefix must be the 12-char key prefix; the hash must
+    be an Argon2id encoding that fits the key_hash column (spec 005,
+    FR-012: reject before any write).
+    """
+    if value.count(":") != 1:
+        return None
+    prefix, key_hash = value.split(":")
+    if PREFIX_RE.match(prefix) is None:
+        return None
+    if not key_hash.startswith("$argon2id$"):
+        return None
+    if len(key_hash) > KEY_HASH_MAX_LENGTH:
+        return None
+    return prefix, key_hash
 
 
 class ApiKeyVerifier:

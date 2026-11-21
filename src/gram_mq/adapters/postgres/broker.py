@@ -15,7 +15,6 @@ from uuid import UUID
 
 from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -85,7 +84,16 @@ class PostgresBroker:
             await session.commit()
 
     async def enqueue(self, message: OutboundMessage) -> None:
+        # The registry existence check is explicit since migration 0003
+        # dropped the messages->bots FK (the journal must outlive a revoked
+        # bot): the broker, not the schema, is the gatekeeper of the
+        # UnknownBotError contract.
         async with self._session() as session:
+            found = await session.execute(
+                select(exists().where(Bot.bot_slug == message.bot_slug))
+            )
+            if not found.scalar_one():
+                raise UnknownBotError(message.bot_slug)
             session.add(
                 Message(
                     id=message.id,
@@ -98,10 +106,7 @@ class PostgresBroker:
                     max_attempts=self._max_attempts,
                 )
             )
-            try:
-                await session.commit()
-            except IntegrityError as exc:
-                raise UnknownBotError(message.bot_slug) from exc
+            await session.commit()
 
     async def claim(self, *, worker_id: str) -> Delivery | None:
         async with self._session() as session:

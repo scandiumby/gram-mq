@@ -11,8 +11,8 @@ import re
 
 import pytest
 
-import gram_mq.cli.slug as slug_module
-from gram_mq.cli.slug import SlugExhaustedError, generate_bot_slug
+import gram_mq.slug as slug_module
+from gram_mq.slug import SlugExhaustedError, generate_bot_slug
 
 SLUG_RE = re.compile(r"^[0-9]{4}(-[a-z][a-z-]{0,11}){2}$")
 

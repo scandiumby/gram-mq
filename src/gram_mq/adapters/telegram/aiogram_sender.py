@@ -23,8 +23,21 @@ from gram_mq.ports.telegram import TelegramSendError
 _bot_cache: dict[str, Bot] = {}
 
 
-def classify(exc: BaseException) -> TelegramSendError:
-    """Map an aiogram/asyncio exception to the port's error taxonomy."""
+def classify(exc: BaseException, *, secret: str | None = None) -> TelegramSendError:
+    """Map an aiogram/asyncio exception to the port's error taxonomy.
+
+    Permanent rejections keep the Telegram server detail (e.g. "chat not
+    found") so `messages.error` and the logs name the real cause; the
+    bot token, if the server text ever echoes it, is redacted
+    (contracts/telegram-sender.md, invariant: no token in reason).
+    """
+
+    def detail() -> str:
+        text = str(exc).strip()
+        if secret:
+            text = text.replace(secret, "<redacted>")
+        return f": {text}" if text else ""
+
     if isinstance(exc, TelegramRetryAfter):
         return TelegramSendError(
             "telegram rate limit", retry_after=float(exc.retry_after)
@@ -35,11 +48,11 @@ def classify(exc: BaseException) -> TelegramSendError:
         exc, (TelegramBadRequest, TelegramForbiddenError, TelegramUnauthorizedError)
     ):
         return TelegramSendError(
-            f"telegram rejected the message: {type(exc).__name__}",
+            f"telegram rejected the message: {type(exc).__name__}{detail()}",
             permanent=True,
         )
     return TelegramSendError(
-        f"telegram send failed: {type(exc).__name__}", permanent=True
+        f"telegram send failed: {type(exc).__name__}{detail()}", permanent=True
     )
 
 
@@ -62,7 +75,7 @@ class AiogramTelegramSender:
             TelegramForbiddenError,
             TelegramUnauthorizedError,
         ) as exc:
-            raise classify(exc) from exc
+            raise classify(exc, secret=bot_token) from exc
         except TimeoutError as exc:  # pragma: no cover - defensive
             raise classify(exc) from exc
         return str(message.message_id)

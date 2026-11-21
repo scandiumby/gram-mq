@@ -18,6 +18,12 @@ import pytest_asyncio
 from gram_mq.adapters.memory.broker import InMemoryBroker, MemoryStore
 from gram_mq.ports.broker import OutboundMessage
 from gram_mq.ports.telegram import TelegramSendError
+from gram_mq.worker.bot_config import (
+    NotReady,
+    NotRegistered,
+    Ready,
+    TokenLookup,
+)
 from gram_mq.worker.runner import process_delivery, run_worker
 from tests.conftest import FakeClock
 
@@ -46,8 +52,10 @@ class FakeBotConfig:
     def __init__(self, tokens: dict[str, str]) -> None:
         self.tokens = tokens
 
-    async def token_for(self, bot_slug: str) -> str | None:
-        return self.tokens.get(bot_slug)
+    async def token_for(self, bot_slug: str) -> TokenLookup:
+        if bot_slug in self.tokens:
+            return Ready(self.tokens[bot_slug])
+        return NotReady()
 
 
 @pytest.fixture
@@ -196,14 +204,44 @@ async def test_missing_token_file_retries(
         delivery,
         broker=broker,
         sender=sender,
-        bot_config=config(tokens={}),  # no file for the bot
+        bot_config=config(tokens={}),  # no readable halves for the bot
         backoff_base=5.0,
         max_attempts=3,
     )
 
     assert sender.calls == 0
     assert await broker.queue_depth(SLUG) == 1
-    assert "token" in (broker._store.rows[0].error or "")
+    assert "unreadable" in (broker._store.rows[0].error or "")
+
+
+async def test_unregistered_bot_dead_letters_immediately(
+    broker: InMemoryBroker,
+) -> None:
+    """Spec 006, US3: a revoked/unknown bot is permanent — the message
+    dead-letters right away instead of burning the retry budget."""
+    await enqueue(broker)
+    sender = FakeSender()
+
+    class UnregisteredConfig:
+        async def token_for(self, bot_slug: str) -> NotRegistered:
+            return NotRegistered()
+
+    delivery = await broker.claim(worker_id="w1")
+    assert delivery is not None
+    await process_delivery(
+        delivery,
+        broker=broker,
+        sender=sender,
+        bot_config=UnregisteredConfig(),
+        backoff_base=5.0,
+        max_attempts=3,
+    )
+
+    assert sender.calls == 0
+    assert await broker.queue_depth(SLUG) == 0
+    row = broker._store.rows[0]
+    assert row.status == "failed"
+    assert row.error == "bot not registered"
 
 
 async def test_retry_exhaustion_fails(broker: InMemoryBroker, clock: FakeClock) -> None:

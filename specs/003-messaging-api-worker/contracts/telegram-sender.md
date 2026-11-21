@@ -22,7 +22,11 @@ class TelegramSender(Protocol):
 ```python
 @dataclass(frozen=True)  # семантика полей
 class TelegramSendError(Exception):
-    reason: str            # человекочитаемая причина БЕЗ токена и текста сообщения
+    reason: str            # человекочитаемая причина БЕЗ токена и текста
+                           # сообщения; с 2026-10-18 включает деталь ответа
+                           # Telegram (напр. "chat not found") с вычищенным
+                           # токеном — точная причина видна в messages.error
+                           # и логах без вскрытия исключения aiogram
     retry_after: float | None  # сек; только для 429 (Telegram указал retry_after)
     permanent: bool        # True: повтор бессмысленен (400/403 Telegram)
 ```
@@ -39,7 +43,9 @@ class TelegramSendError(Exception):
 ## Инварианты
 
 - Токен бота передаётся только в адаптер и не покидает его кроме как в
-  Telegram API; в reason ошибок не входит.
+  Telegram API; в reason ошибок не входит (уточнение 2026-10-18: если
+  серверный текст ошибки содержит токен, адаптер заменяет его на
+  `<redacted>` до включения текста в reason).
 - `send_text` не ведёт собственного журнала с секретами; логирует
   (адаптер) только bot_slug/chat_id/исход.
 - Успех ⇔ Telegram подтвердил сообщение — возвращённый message_id

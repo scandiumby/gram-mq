@@ -47,12 +47,15 @@ def test_bad_request_is_permanent() -> None:
     error = classify(exc)
     assert error.permanent is True
     assert error.retry_after is None
+    # The Telegram server detail must reach messages.error and the logs.
+    assert "chat not found" in error.reason
 
 
 def test_forbidden_is_permanent() -> None:
     exc = TelegramForbiddenError(method=cast(Any, "sendMessage"), message="bot blocked")
     error = classify(exc)
     assert error.permanent is True
+    assert "bot blocked" in error.reason
 
 
 def test_unauthorized_token_is_permanent() -> None:
@@ -65,13 +68,20 @@ def test_unexpected_error_is_permanent_and_named() -> None:
     error = classify(ValueError("boom"))
     assert error.permanent is True
     assert "ValueError" in error.reason
+    assert "boom" in error.reason
+
+
+def test_detail_less_exception_keeps_reason_clean() -> None:
+    error = classify(ValueError())
+    assert error.reason.endswith("ValueError")
 
 
 def test_reason_never_contains_a_token() -> None:
     token = "123456789:AAFleak-check"
     exc = TelegramBadRequest(method=cast(Any, "sendMessage"), message=f"bad {token}")
-    error = classify(exc)
+    error = classify(exc, secret=token)
     assert token not in error.reason
+    assert "<redacted>" in error.reason
 
 
 class _StubSession:
