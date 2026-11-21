@@ -98,6 +98,19 @@ class Settings(BaseSettings):
     bot_bootstrap_enabled: bool = False
     bot_bootstrap_token: SecretStr | None = None
     token_master_key: SecretStr | None = None
+    # Inbound webhook flow (spec 007): the public base URL the CLI reports
+    # to Telegram (TLS termination is external infrastructure), the HMAC
+    # master key for webhook secret check values (dedicated, like the
+    # token master key: losing it means 401 on every webhook until
+    # re-registration), and the external update-delivery endpoint the
+    # inbound worker posts to (its presence is also run_all.py's signal
+    # to start the third service).
+    webhook_public_url: str | None = None
+    webhook_master_key: SecretStr | None = None
+    inbound_delivery_url: str | None = None
+    inbound_delivery_auth_header_name: str = "Authorization"
+    inbound_delivery_auth_header_value: SecretStr | None = None
+    inbound_delivery_timeout_seconds: float = 10.0
 
 
 @lru_cache(maxsize=1)

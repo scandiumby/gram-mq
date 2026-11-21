@@ -1,11 +1,13 @@
-"""FastAPI application: the machine-realm inbound API (spec 003: US2)
-plus the operator bootstrap endpoints (spec 005: US2; spec 006: US1/US3).
+"""FastAPI application: the machine-realm inbound API (spec 003: US2),
+the operator bootstrap endpoints (spec 005: US2; spec 006: US1/US3), and
+the Telegram webhook surface (spec 007: US1).
 
 The app depends on ports only (Constitution I): the broker, the key
-verifier, the key activator, and the bot provisioner/revoker are
-injected, which is what makes the whole surface testable on the memory
-broker and fakes. Nothing here waits for Telegram (FR-005); the only
-synchronous work is validation + enqueue.
+verifier, the key activator, the bot provisioner/revoker, the inbound
+broker, and the webhook authenticator are injected, which is what makes
+the whole surface testable on the memory brokers and fakes. Nothing here
+waits for Telegram or the external server (FR-005; spec 007 FR-002); the
+only synchronous work of the webhook is validation + enqueue.
 """
 
 from __future__ import annotations
@@ -14,21 +16,32 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, status
 from pydantic import SecretStr
 
 from gram_mq.api.auth import parse_key_material
 from gram_mq.api.schemas import BotCreateIn, MessageIn
 from gram_mq.bot_admin import DuplicateTokenError
 from gram_mq.ports.broker import BrokerPort, OutboundMessage, UnknownBotError
+from gram_mq.ports.inbound import InboundBrokerPort, InboundUpdate
 
 logger = logging.getLogger("gram_mq.api")
 
 
 class KeyVerifier(Protocol):
     async def verify(self, key: str | None) -> bool: ...
+
+
+#: The Telegram webhook surface's verdict: "ok" authenticates, "unknown"
+#: maps to 404 (missing bot and disabled reception are indistinguishable
+#: by design), "rejected" maps to 401 (spec 007, FR-009).
+WebhookCheck = Literal["ok", "unknown", "rejected"]
+
+
+class WebhookAuth(Protocol):
+    async def check(self, bot_slug: str, presented: str | None) -> WebhookCheck: ...
 
 
 #: Persists an activated key; False means the prefix already exists.
@@ -84,6 +97,8 @@ def create_app(
     bot_management: BotManagement | None = None,
     bot_provisioner: BotProvisioner | None = None,
     bot_revoker: BotRevoker | None = None,
+    inbound_broker: InboundBrokerPort | None = None,
+    webhook_auth: WebhookAuth | None = None,
 ) -> FastAPI:
     app = FastAPI(title="gram-mq", version="0.1.0")
 
@@ -128,6 +143,82 @@ def create_app(
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    if inbound_broker is not None and webhook_auth is not None:
+        # The Telegram webhook surface (spec 007, US1): registered only
+        # when both ports are injected — an outbound-only deploy (no
+        # webhook master key) keeps the whole /webhooks/* space a 404.
+        @app.post("/webhooks/{bot_slug}", status_code=status.HTTP_200_OK)
+        async def receive_webhook_update(
+            bot_slug: str,
+            payload: Annotated[dict[str, Any], Body()],
+            x_telegram_bot_api_secret_token: str | None = Header(
+                default=None, alias="X-Telegram-Bot-Api-Secret-Token"
+            ),
+        ) -> dict[str, str]:
+            verdict = await webhook_auth.check(
+                bot_slug, x_telegram_bot_api_secret_token
+            )
+            # Missing header, wrong value — one undifferentiated 401, no
+            # secret echo; a missing bot and disabled reception share one
+            # 404 — no oracle (FR-009).
+            if verdict == "unknown":
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="not found"
+                )
+            if verdict != "ok":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized"
+                )
+            update_id = payload.get("update_id")
+            if isinstance(update_id, bool) or not isinstance(update_id, int):
+                # The only field the system must understand (journal,
+                # consumer-side dedup); everything else travels verbatim.
+                # Plain 422: the HTTP_422_UNPROCESSABLE_ENTITY constant
+                # is deprecated by starlette.
+                raise HTTPException(
+                    status_code=422, detail="update_id must be an integer"
+                )
+            update = InboundUpdate(
+                id=uuid.uuid4(),
+                bot_slug=bot_slug,
+                update_id=update_id,
+                payload=payload,
+            )
+            try:
+                journaled = await inbound_broker.enqueue_inbound(update)
+            except UnknownBotError as exc:
+                # The bot vanished between the auth SELECT and the insert.
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="not found"
+                ) from exc
+            except Exception as exc:
+                # Storage failure: NOT a 200 — Telegram must retry (FR-002,
+                # US1 scenario 4). Boundary catch: logged, never silent.
+                logger.error(
+                    "webhook enqueue failed bot=%s update_id=%s: %s",
+                    bot_slug,
+                    update_id,
+                    type(exc).__name__,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="storage unavailable",
+                ) from exc
+            # Payload contents are never logged (FR-008); update_id keys
+            # every lifecycle event (FR-010).
+            if journaled:
+                logger.info(
+                    "webhook accepted bot=%s update_id=%s id=%s",
+                    bot_slug,
+                    update_id,
+                    update.id,
+                )
+            else:
+                logger.info(
+                    "webhook retry absorbed bot=%s update_id=%s", bot_slug, update_id
+                )
+            return {"status": "ok"}
 
     @app.post(
         "/bootstrap/api-key",

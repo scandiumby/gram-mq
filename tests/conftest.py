@@ -25,6 +25,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from gram_mq import db, settings  # noqa: F401
 from gram_mq.adapters.memory.broker import InMemoryBroker, MemoryStore
+from gram_mq.adapters.memory.inbound_broker import (
+    InboundMemoryStore,
+    InMemoryInboundBroker,
+)
 
 # Import-time coverage: models and settings execute their declarations on
 # import in every entry point (api, worker, alembic); the contract suite
@@ -34,9 +38,11 @@ from gram_mq.models import (  # noqa: F401
     base,
     bots,
     claim_state,
+    inbound,
     messages,
 )
 from gram_mq.ports.broker import BrokerPort
+from gram_mq.ports.inbound import InboundBrokerPort
 from gram_mq.settings import TestDatabase, table_name
 
 _test_database = TestDatabase()
@@ -50,6 +56,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class SeededBroker(BrokerPort, Protocol):
     """BrokerPort plus the adapter-side seeding helper used by tests."""
+
+    async def register_bot(self, bot_slug: str) -> None: ...
+
+
+class SeededInboundBroker(InboundBrokerPort, Protocol):
+    """InboundBrokerPort plus the adapter-side seeding helper (spec 007)."""
 
     async def register_bot(self, bot_slug: str) -> None: ...
 
@@ -146,3 +158,60 @@ async def make_broker(
 @pytest_asyncio.fixture
 async def broker(make_broker: Callable[..., SeededBroker]) -> SeededBroker:
     return make_broker()
+
+
+@pytest_asyncio.fixture
+async def make_inbound_broker(
+    adapter: str, clock: FakeClock, _pg_schema: None
+) -> AsyncIterator[Callable[..., SeededInboundBroker]]:
+    """Factory for the inbound queue contract suite (spec 007): memory
+    always, Postgres when the test database URL is configured."""
+    store = InboundMemoryStore()
+    brokers: list[SeededInboundBroker] = []
+
+    if adapter == "postgres":
+        engine = create_async_engine(TEST_DATABASE_URL)
+        tables = ", ".join(
+            table_name(name)
+            for name in ("inbound_updates", "bot_inbound_claim_state", "bots")
+        )
+        async with engine.begin() as conn:
+            await conn.execute(text(f"TRUNCATE {tables} CASCADE"))
+        await engine.dispose()
+
+    def _make(
+        *, lease_seconds: float = 60.0, max_attempts: int = 5
+    ) -> SeededInboundBroker:
+        if adapter == "memory":
+            broker: SeededInboundBroker = InMemoryInboundBroker(
+                store,
+                now=clock.now,
+                lease_seconds=lease_seconds,
+                max_attempts=max_attempts,
+            )
+        else:
+            from gram_mq.adapters.postgres.inbound_broker import (
+                PostgresInboundBroker,
+            )
+
+            broker = PostgresInboundBroker(
+                database_url=TEST_DATABASE_URL,
+                lease_seconds=lease_seconds,
+                max_attempts=max_attempts,
+            )
+        brokers.append(broker)
+        return broker
+
+    yield _make
+
+    for broker in brokers:
+        close = getattr(broker, "aclose", None)
+        if close is not None:
+            await close()
+
+
+@pytest_asyncio.fixture
+async def inbound_broker(
+    make_inbound_broker: Callable[..., SeededInboundBroker],
+) -> SeededInboundBroker:
+    return make_inbound_broker()

@@ -17,6 +17,8 @@ from uvicorn import run as uvicorn_run
 
 from gram_mq.adapters.postgres.bot_registry import SqlAlchemyBotRegistry
 from gram_mq.adapters.postgres.broker import PostgresBroker
+from gram_mq.adapters.postgres.inbound_broker import PostgresInboundBroker
+from gram_mq.adapters.postgres.webhook_auth import SqlAlchemyWebhookAuth
 from gram_mq.api.app import (
     BotManagement,
     KeyBootstrap,
@@ -29,6 +31,7 @@ from gram_mq.db import get_session_factory
 from gram_mq.models.api_keys import ApiKey
 from gram_mq.settings import get_settings
 from gram_mq.token_store import TokenFormatError, parse_master_key
+from gram_mq.webhook_store import parse_webhook_master_key
 
 logger = logging.getLogger("gram_mq.api")
 
@@ -72,6 +75,18 @@ def build_default_app() -> object:
         lease_seconds=settings.broker_lease_seconds,
         max_attempts=settings.broker_max_attempts,
     )
+    # Webhook surface (spec 007): injected only when the webhook master
+    # key is configured — an outbound-only deploy keeps /webhooks/* off.
+    webhook_master_key = parse_webhook_master_key(settings.webhook_master_key)
+    inbound_broker = None
+    webhook_auth = None
+    if webhook_master_key is not None:
+        inbound_broker = PostgresInboundBroker(
+            database_url=settings.database_url.get_secret_value(),
+            lease_seconds=settings.broker_lease_seconds,
+            max_attempts=settings.broker_max_attempts,
+        )
+        webhook_auth = SqlAlchemyWebhookAuth(session_factory, webhook_master_key)
     bootstrap = KeyBootstrap(
         enabled=settings.key_bootstrap_enabled,
         material=settings.key_bootstrap_material,
@@ -109,6 +124,8 @@ def build_default_app() -> object:
         ),
         bot_provisioner=provision,
         bot_revoker=revoke,
+        inbound_broker=inbound_broker,
+        webhook_auth=webhook_auth,
     )
 
 

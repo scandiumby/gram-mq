@@ -1,0 +1,19 @@
+[Unit]
+Description=gram-mq inbound update delivery worker (spec 007)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gram-mq
+Group=gram-mq
+# Same single env-file pointer as the other units. The service starts
+# only where GRAMMQ_INBOUND_DELIVERY_URL is set in the env-file; its
+# entry point fail-fasts with a clear error otherwise.
+Environment=GRAMMQ_ENV_FILE=/etc/gram-mq/.env
+ExecStart=/opt/gram-mq/.venv/bin/gram-mq-inbound-worker
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from gram_mq.models.bots import Bot
 from gram_mq.models.claim_state import BotClaimState
+from gram_mq.models.inbound import BotInboundClaimState
 
 
 class SqlAlchemyBotRegistry:
@@ -31,8 +32,10 @@ class SqlAlchemyBotRegistry:
             return await session.get(Bot, bot_slug) is not None
 
     async def add(self, bot_slug: str, *, token_half: str, pair_nonce: str) -> None:
-        """Insert the bot row and seed the claim fairness ledger in one
-        transaction; the PK settles concurrent provisioning races."""
+        """Insert the bot row and seed both claim fairness ledgers in one
+        transaction; the PK settles concurrent provisioning races. The
+        inbound ledger (spec 007) mirrors the outbound one: a bot missing
+        from it is invisible to the inbound round-robin."""
         async with self._session_factory() as session:
             async with session.begin():
                 session.add(
@@ -44,6 +47,11 @@ class SqlAlchemyBotRegistry:
                 )
                 await session.execute(
                     pg_insert(BotClaimState)
+                    .values(bot_slug=bot_slug)
+                    .on_conflict_do_nothing(index_elements=["bot_slug"])
+                )
+                await session.execute(
+                    pg_insert(BotInboundClaimState)
                     .values(bot_slug=bot_slug)
                     .on_conflict_do_nothing(index_elements=["bot_slug"])
                 )

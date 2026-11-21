@@ -86,6 +86,17 @@ Every accepted message must survive the crash of any process.
   or through the CLI wizard; both paths write the same encrypted halves.
   The endpoint is enabled only for a creation/rotation window, exactly
   like the API key activation endpoint.
+- Telegram webhooks are a third, permanent URL space:
+  `POST /webhooks/{bot_slug}`, outside both `/api/v1/*` and
+  `/api/dashboard/*`. The caller is Telegram itself, so neither an API
+  key nor a session applies: requests authenticate by the per-bot
+  webhook secret in the `X-Telegram-Bot-Api-Secret-Token` header,
+  verified constant-time against an HMAC-SHA256 check value (Principle
+  III) stored on the bot's registry row; the plaintext secret exists
+  only inside the registering CLI for the duration of one `set_webhook`
+  call. The surface is wired only when the webhook master key is
+  configured; a bot without a check value — disabled reception or
+  revoked — answers the same 404 as an unknown bot.
 
 ## Engineering Standards
 
@@ -257,4 +268,4 @@ tests — reads configuration the same way.
 - The analyze and converge commands only read the constitution and never
   modify it.
 
-**Version**: 3.0.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-10-19
+**Version**: 3.1.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-11-22

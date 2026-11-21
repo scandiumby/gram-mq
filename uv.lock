@@ -814,7 +814,7 @@ wheels = [
 
 [[package]]
 name = "gram-mq"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiogram" },
@@ -823,6 +823,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pydantic-settings" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn" },
@@ -831,7 +832,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -846,6 +846,7 @@ requires-dist = [
     { name = "asyncpg" },
     { name = "cryptography", specifier = ">=43" },
     { name = "fastapi" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "uvicorn" },
@@ -854,7 +855,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "coverage" },
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
