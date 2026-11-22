@@ -20,6 +20,20 @@ DEFAULT_LEASE_SECONDS = 60
 # windows — a deeper buffer keeps spikes deliverable instead of failed.
 DEFAULT_MAX_ATTEMPTS = 20
 DEFAULT_TABLE_PREFIX = "gmq"
+# Synchronous Bot API proxy (spec 008): the default whitelist is the
+# immediate-reaction set — answer a callback in its window, edit/stop/
+# delete what the queue already delivered, typing presence, lookups.
+# The send* family stays with the queue (the anti-double consumer
+# contract); the banned list is a code constant, never a setting.
+DEFAULT_TELEGRAM_PROXY_ALLOWED_METHODS = (
+    "getMe,answerCallbackQuery,answerInlineQuery,answerWebAppQuery,"
+    "sendChatAction,editMessageText,editMessageCaption,"
+    "editMessageReplyMarkup,editMessageLiveLocation,stopMessageLiveLocation,"
+    "deleteMessage,getChat,getChatMember"
+)
+# 50 MB — Telegram's own bot upload ceiling: the proxy never rejects
+# what Telegram would accept; operators may tighten it.
+DEFAULT_TELEGRAM_PROXY_MAX_BODY_BYTES = 52_428_800
 
 
 class TableNaming(BaseSettings):
@@ -111,6 +125,14 @@ class Settings(BaseSettings):
     inbound_delivery_auth_header_name: str = "Authorization"
     inbound_delivery_auth_header_value: SecretStr | None = None
     inbound_delivery_timeout_seconds: float = 10.0
+    # Synchronous Bot API proxy (spec 008): CSV of allowed methods (the
+    # default whitelist lives in code above; garbage or an empty list
+    # aborts startup — an explicit list or nothing), the call timeout,
+    # and the request body cap (50 MB mirrors Telegram's own bot upload
+    # ceiling, so the proxy never rejects what Telegram would accept).
+    telegram_proxy_allowed_methods: str = DEFAULT_TELEGRAM_PROXY_ALLOWED_METHODS
+    telegram_proxy_timeout_seconds: float = 30.0
+    telegram_proxy_max_body_bytes: int = DEFAULT_TELEGRAM_PROXY_MAX_BODY_BYTES
 
 
 @lru_cache(maxsize=1)

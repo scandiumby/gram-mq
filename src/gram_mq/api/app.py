@@ -1,24 +1,39 @@
 """FastAPI application: the machine-realm inbound API (spec 003: US2),
-the operator bootstrap endpoints (spec 005: US2; spec 006: US1/US3), and
-the Telegram webhook surface (spec 007: US1).
+the operator bootstrap endpoints (spec 005: US2; spec 006: US1/US3), the
+Telegram webhook surface (spec 007: US1), and the synchronous Bot API
+proxy (spec 008: US1).
 
 The app depends on ports only (Constitution I): the broker, the key
 verifier, the key activator, the bot provisioner/revoker, the inbound
-broker, and the webhook authenticator are injected, which is what makes
-the whole surface testable on the memory brokers and fakes. Nothing here
-waits for Telegram or the external server (FR-005; spec 007 FR-002); the
-only synchronous work of the webhook is validation + enqueue.
+broker, the webhook authenticator, the bot config, and the Telegram
+method caller are injected, which is what makes the whole surface
+testable on the memory brokers and fakes. Nothing here waits for the
+external server (FR-005; spec 007 FR-002); the webhook's only
+synchronous work is validation + enqueue, and the proxy's only
+synchronous work is the Telegram call itself (spec 008 FR-002).
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Protocol
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, status
+from fastapi import (
+    Body,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from pydantic import SecretStr
 
 from gram_mq.api.auth import parse_key_material
@@ -26,6 +41,9 @@ from gram_mq.api.schemas import BotCreateIn, MessageIn
 from gram_mq.bot_admin import DuplicateTokenError
 from gram_mq.ports.broker import BrokerPort, OutboundMessage, UnknownBotError
 from gram_mq.ports.inbound import InboundBrokerPort, InboundUpdate
+from gram_mq.ports.telegram import TelegramCallError, TelegramMethodCaller
+from gram_mq.settings import DEFAULT_TELEGRAM_PROXY_MAX_BODY_BYTES
+from gram_mq.worker.bot_config import BotConfig, NotRegistered, Ready
 
 logger = logging.getLogger("gram_mq.api")
 
@@ -42,6 +60,48 @@ WebhookCheck = Literal["ok", "unknown", "rejected"]
 
 class WebhookAuth(Protocol):
     async def check(self, bot_slug: str, presented: str | None) -> WebhookCheck: ...
+
+
+#: Bot API methods that conflict with system-managed flows (spec 008,
+#: FR-004): getUpdates fights the webhook receiver (Telegram answers
+#: 409 to it under an active webhook anyway), setWebhook/deleteWebhook
+#: fight the operator CLI (spec 007), logOut/close switch the bot to
+#: polling. Fixed by the contract — the settings whitelist can never
+#: re-open any of these.
+BANNED_TELEGRAM_METHODS = frozenset(
+    {"getUpdates", "setWebhook", "deleteWebhook", "logOut", "close"}
+)
+_BANNED_METHODS_LOWER = frozenset(name.lower() for name in BANNED_TELEGRAM_METHODS)
+
+#: Bot API method names are ASCII letters (camelCase in the wild); the
+#: proxy route validates against this before anything else.
+TELEGRAM_METHOD_NAME = re.compile(r"^[A-Za-z]{1,64}$")
+
+MethodPolicy = Literal["ok", "banned", "not_allowed"]
+
+
+def resolve_method_policy(method: str, allowed: frozenset[str]) -> MethodPolicy:
+    """The banned list wins over the allowed one (FR-004 over FR-005);
+    matching is case-insensitive — Telegram itself is case-sensitive, so
+    blocking every spelling of a banned name is strictly safer."""
+    name = method.lower()
+    if name in _BANNED_METHODS_LOWER:
+        return "banned"
+    return "ok" if name in allowed else "not_allowed"
+
+
+def parse_allowed_methods(csv: str) -> frozenset[str]:
+    """Settings CSV -> the lowercase allowed set; garbage or an empty
+    list aborts startup (research R9: an explicit list or nothing)."""
+    if not csv.strip():
+        raise ValueError("the Telegram proxy method list must not be empty")
+    names: list[str] = []
+    for item in csv.split(","):
+        name = item.strip().lower()
+        if not TELEGRAM_METHOD_NAME.fullmatch(name):
+            raise ValueError(f"invalid Telegram proxy method name: {item.strip()!r}")
+        names.append(name)
+    return frozenset(names)
 
 
 #: Persists an activated key; False means the prefix already exists.
@@ -76,6 +136,33 @@ class ProvisionOutcome:
 #: from the request body.
 BotProvisioner = Callable[[str, str], Awaitable[ProvisionOutcome]]
 
+
+def _multipart_boundary(content_type: str) -> str | None:
+    """The boundary parameter of a multipart/form-data header, if sane."""
+    _, _, params = content_type.partition(";")
+    for param in params.split(";"):
+        name, sep, value = param.partition("=")
+        if sep and name.strip().lower() == "boundary":
+            return value.strip().strip('"') or None
+    return None
+
+
+def _multipart_well_formed(body: bytes, boundary: str) -> bool:
+    """Structural sanity only: the closing delimiter must be there.
+    Telegram diagnoses field-level details far better than a proxy can
+    (research R6) — and its 400 answers travel back verbatim anyway."""
+    closing = f"--{boundary}--".encode()
+    return bool(body) and closing in body
+
+
+def _json_parseable(body: bytes) -> bool:
+    try:
+        json.loads(body)
+    except ValueError:
+        return False
+    return True
+
+
 #: slug -> True when a live bot was deleted.
 BotRevoker = Callable[[str], Awaitable[bool]]
 
@@ -99,6 +186,10 @@ def create_app(
     bot_revoker: BotRevoker | None = None,
     inbound_broker: InboundBrokerPort | None = None,
     webhook_auth: WebhookAuth | None = None,
+    bot_config: BotConfig | None = None,
+    method_caller: TelegramMethodCaller | None = None,
+    allowed_methods: frozenset[str] = frozenset(),
+    proxy_max_body_bytes: int = DEFAULT_TELEGRAM_PROXY_MAX_BODY_BYTES,
 ) -> FastAPI:
     app = FastAPI(title="gram-mq", version="0.1.0")
 
@@ -219,6 +310,129 @@ def create_app(
                     "webhook retry absorbed bot=%s update_id=%s", bot_slug, update_id
                 )
             return {"status": "ok"}
+
+    if bot_config is not None and method_caller is not None:
+        # The synchronous Bot API proxy (spec 008, US1): registered only
+        # when both ports are injected — the whole /api/v1/telegram/*
+        # space stays a 404 otherwise (the /webhooks/* pattern). A pure
+        # pipe: no queue writes, no retries, nothing synchronous beyond
+        # the Telegram call itself (FR-002, Constitution II).
+        @app.post(
+            "/api/v1/telegram/{bot_slug}/{method}",
+            dependencies=[Depends(require_api_key)],
+        )
+        async def call_telegram_method(
+            bot_slug: str, method: str, request: Request
+        ) -> Response:
+            started = time.monotonic()
+
+            def refuse(status_code: int, reason: str, detail: str) -> HTTPException:
+                logger.warning(
+                    "proxy denied bot=%s method=%s reason=%s dur=%dms",
+                    bot_slug,
+                    method,
+                    reason,
+                    int((time.monotonic() - started) * 1000),
+                )
+                return HTTPException(status_code=status_code, detail=detail)
+
+            if not TELEGRAM_METHOD_NAME.fullmatch(method):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="not found"
+                )
+            if resolve_method_policy(method, allowed_methods) != "ok":
+                # "banned" and "not allowed" share one answer — no oracle
+                # for the internal classification (FR-004/FR-005); the
+                # banned list wins over any settings extension.
+                raise refuse(
+                    status.HTTP_403_FORBIDDEN,
+                    "method_not_allowed",
+                    "method not allowed",
+                )
+            lookup = await bot_config.token_for(bot_slug)
+            if isinstance(lookup, NotRegistered):
+                # The same 404 as POST /api/v1/messages: the registry is
+                # the single source of truth.
+                raise refuse(status.HTTP_404_NOT_FOUND, "not_found", "bot not found")
+            if not isinstance(lookup, Ready):
+                # No decryptable pair — no calls are made by that bot
+                # (Constitution III, spec 006); retryable for the operator.
+                raise refuse(
+                    status.HTTP_503_SERVICE_UNAVAILABLE, "not_ready", "bot not ready"
+                )
+            content_type = request.headers.get("Content-Type", "")
+            media_base = content_type.split(";", 1)[0].strip().lower()
+            is_json = media_base == "application/json" or media_base.endswith("+json")
+            is_multipart = media_base == "multipart/form-data"
+            if not is_json and not is_multipart:
+                raise refuse(
+                    415, "unsupported_content_type", "unsupported content type"
+                )
+            declared_length = request.headers.get("Content-Length")
+            if (
+                declared_length is not None
+                and declared_length.isdigit()
+                and int(declared_length) > proxy_max_body_bytes
+            ):
+                # Refused before the body is read (research R6).
+                raise refuse(413, "request_body_too_large", "request body too large")
+            body = await request.body()
+            if len(body) > proxy_max_body_bytes:
+                # Chunked requests can outgrow the header's word.
+                raise refuse(413, "request_body_too_large", "request body too large")
+            if is_multipart:
+                boundary = _multipart_boundary(content_type)
+                if boundary is None or not _multipart_well_formed(body, boundary):
+                    raise refuse(422, "invalid_request_body", "invalid request body")
+            elif not _json_parseable(body):
+                raise refuse(422, "invalid_request_body", "invalid request body")
+            # Bodies are never logged, the token never leaves this frame
+            # (Constitution III, FR-009).
+            try:
+                result = await method_caller.call_method(
+                    bot_token=lookup.token,
+                    method=method,
+                    content_type=content_type,
+                    body=body,
+                )
+            except TelegramCallError as exc:
+                logger.warning(
+                    "proxy transport bot=%s method=%s kind=%s dur=%dms",
+                    bot_slug,
+                    method,
+                    exc.kind,
+                    int((time.monotonic() - started) * 1000),
+                )
+                if exc.kind == "timeout":
+                    raise HTTPException(
+                        status_code=504, detail="telegram timeout"
+                    ) from exc
+                raise HTTPException(
+                    status_code=502, detail="telegram unreachable"
+                ) from exc
+            # Any HTTP answer keeps Telegram's own status and body; the
+            # single remap is 401 — ours means "wrong X-API-Key", so a
+            # token rejection (revoked at BotFather) becomes 503 while
+            # the body still shows error_code 401 (research R5).
+            final_status = 503 if result.status == 401 else result.status
+            headers = (
+                {"Retry-After": str(int(result.retry_after))}
+                if result.status == 429 and result.retry_after is not None
+                else None
+            )
+            logger.info(
+                "proxy bot=%s method=%s status=%s dur=%dms",
+                bot_slug,
+                method,
+                final_status,
+                int((time.monotonic() - started) * 1000),
+            )
+            return Response(
+                content=result.body,
+                status_code=final_status,
+                media_type=result.content_type,
+                headers=headers,
+            )
 
     @app.post(
         "/bootstrap/api-key",

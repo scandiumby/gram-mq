@@ -1,6 +1,33 @@
 # gram-mq
 GramMQ — a smart Telegram proxy with message queue control. No message gets lost, even under heavy load.
 
+## Synchronous Bot API proxy (feature 008)
+
+The external (unstable) bot server never holds bot tokens: every Bot API
+call that needs the result *now* goes through
+`POST /api/v1/telegram/{bot_slug}/{method}` — the machine realm
+(`X-API-Key`, same as `POST /api/v1/messages`). The endpoint is a pure
+pipe: the token is reassembled in memory from the split store (feature
+006), the JSON or multipart body travels to Telegram verbatim, and any
+Telegram answer returns to the caller with its own status and body
+(429 additionally echoes `Retry-After`; Telegram's 401 — a revoked bot
+token — is remapped to 503 so it never collides with our own 401;
+timeout/network → 504/502). No queues, no retries, no state: one
+message — one path, delivery of new messages stays with the queue (the
+anti-double consumer contract).
+
+Method policy: `getUpdates`, `setWebhook`, `deleteWebhook`, `logOut`,
+`close` are banned unconditionally (they fight the managed webhook/CLI
+state); everything else is default-deny — the whitelist
+`GRAMMQ_TELEGRAM_PROXY_ALLOWED_METHODS` (CSV) starts from the
+immediate-reaction set (`getMe`, `answer*`, `edit*`/`stop*`/
+`deleteMessage`, `sendChatAction`, `getChat`, `getChatMember`) and the
+operator extends it without code changes; the banned list always wins.
+Timeout and body cap (50 MB, Telegram's own upload ceiling) are
+settings too. Logs carry bot+method+outcome+duration — never tokens,
+keys, or bodies. Full contract for the external service:
+`specs/008-telegram-api-proxy/contracts/telegram-api-proxy.md`.
+
 ## Inbound flow (feature 007)
 
 Telegram updates of the registered bots arrive at

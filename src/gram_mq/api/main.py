@@ -19,11 +19,13 @@ from gram_mq.adapters.postgres.bot_registry import SqlAlchemyBotRegistry
 from gram_mq.adapters.postgres.broker import PostgresBroker
 from gram_mq.adapters.postgres.inbound_broker import PostgresInboundBroker
 from gram_mq.adapters.postgres.webhook_auth import SqlAlchemyWebhookAuth
+from gram_mq.adapters.telegram.httpx_method_caller import HttpxTelegramMethodCaller
 from gram_mq.api.app import (
     BotManagement,
     KeyBootstrap,
     ProvisionOutcome,
     create_app,
+    parse_allowed_methods,
 )
 from gram_mq.api.auth import ApiKeyVerifier, KeyRecord
 from gram_mq.bot_admin import provision_bot, revoke_bot
@@ -32,6 +34,7 @@ from gram_mq.models.api_keys import ApiKey
 from gram_mq.settings import get_settings
 from gram_mq.token_store import TokenFormatError, parse_master_key
 from gram_mq.webhook_store import parse_webhook_master_key
+from gram_mq.worker.bot_config import SplitFileBotConfig
 
 logger = logging.getLogger("gram_mq.api")
 
@@ -113,6 +116,20 @@ def build_default_app() -> object:
     async def revoke(bot_slug: str) -> bool:
         return await revoke_bot(bots_dir=bots_dir, registry=registry, bot_slug=bot_slug)
 
+    # Synchronous Bot API proxy (spec 008): the same split-token store
+    # the worker and the CLI read, plus the raw httpx caller; a garbage
+    # or empty allowed-methods CSV aborts startup right here (fail-fast,
+    # research R9).
+    proxy_bot_config = SplitFileBotConfig(
+        bots_dir=bots_dir,
+        fetch_half=registry.fetch_half,
+        master_key=master_key,
+    )
+    proxy_caller = HttpxTelegramMethodCaller(
+        timeout_seconds=settings.telegram_proxy_timeout_seconds
+    )
+    proxy_allowed = parse_allowed_methods(settings.telegram_proxy_allowed_methods)
+
     return create_app(
         broker=broker,
         key_verifier=ApiKeyVerifier(fetch),
@@ -126,6 +143,10 @@ def build_default_app() -> object:
         bot_revoker=revoke,
         inbound_broker=inbound_broker,
         webhook_auth=webhook_auth,
+        bot_config=proxy_bot_config,
+        method_caller=proxy_caller,
+        allowed_methods=proxy_allowed,
+        proxy_max_body_bytes=settings.telegram_proxy_max_body_bytes,
     )
 
 
