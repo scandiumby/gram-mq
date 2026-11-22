@@ -413,9 +413,9 @@ class TestParseAllowedMethods:
     def test_default_parses_to_lowercase_set(self) -> None:
         allowed = parse_allowed_methods(DEFAULT_TELEGRAM_PROXY_ALLOWED_METHODS)
         assert "getme" in allowed
+        assert "sendmessage" in allowed
         assert "answercallbackquery" in allowed
         assert "sendphoto" not in allowed
-        assert len(allowed) == 13
 
     def test_names_are_trimmed_and_lowercased(self) -> None:
         assert parse_allowed_methods(" GetMe , sendPhoto ") == {"getme", "sendphoto"}

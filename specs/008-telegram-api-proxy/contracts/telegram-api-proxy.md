@@ -76,26 +76,28 @@ Content-Type: application/json
 gram-mq настройкой, списки могут отличаться на вашем инстансе):
 
 ```text
-getMe                     answerCallbackQuery      answerInlineQuery
-answerWebAppQuery         sendChatAction           editMessageText
-editMessageCaption        editMessageReplyMarkup   editMessageLiveLocation
-stopMessageLiveLocation   deleteMessage            getChat
-getChatMember
+getMe                     sendMessage              answerCallbackQuery
+answerInlineQuery         answerWebAppQuery        sendChatAction
+editMessageText           editMessageCaption       editMessageReplyMarkup
+editMessageLiveLocation   stopMessageLiveLocation  deleteMessage
+getChat                   getChatMember
 ```
 
 Метод вне перечня → 403; не входящие в базовый перечень методы (включая
-`sendMessage` и семейство отправки новых сообщений) оператор открывает
-по запросу потребности.
+`sendMessage` с мультимедиа и остальное семейство отправки новых
+сообщений) оператор открывает по запросу потребности.
 
 ## Обязанности потребителя (обязательны)
 
-1. **Анти-дубль: одно сообщение — один путь.** Новое сообщение в чат —
-   только очередь `POST /api/v1/messages` (at-least-once, переживает
-   недоступность Telegram). Прокси — только вызовы с результатом-сейчас:
-   ответы на колбэки/inline-запросы (короткие окна Telegram), правки и
-   удаление уже отправленного, действия, чтение. Дублирование одного
-   смысла обоими путями запрещено; gram-mq не детектирует нарушение —
-   дубль в чате останется незамеченным системой.
+1. **Анти-дубль: одно сообщение — один путь.** Новое текстовое сообщение
+   без интерактива — очередь `POST /api/v1/messages` (at-least-once,
+   переживает недоступность Telegram). Прокси — вызовы с
+   результатом-сейчас: ответы на колбэки/inline-запросы (короткие окна
+   Telegram), правки и удаление уже отправленного, действия, чтение, а
+   также `sendMessage` для меню-ориентированных ботов (parse_mode и
+   reply_markup недоступны очереди в её текстовом MVP). Дублирование
+   одного смысла обоими путями запрещено; gram-mq не детектирует
+   нарушение — дубль в чате останется незамеченным системой.
 2. **Повторы — ваши.** На 429 ждите `retry_after` (тело/заголовок), на
    502/504/5xx Telegram — свой backoff. Прокси не повторяет никогда.
    Помните об идемпотентности: повтор `answerCallbackQuery` безвреден,

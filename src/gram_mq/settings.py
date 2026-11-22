@@ -22,11 +22,13 @@ DEFAULT_MAX_ATTEMPTS = 20
 DEFAULT_TABLE_PREFIX = "gmq"
 # Synchronous Bot API proxy (spec 008): the default whitelist is the
 # immediate-reaction set — answer a callback in its window, edit/stop/
-# delete what the queue already delivered, typing presence, lookups.
-# The send* family stays with the queue (the anti-double consumer
-# contract); the banned list is a code constant, never a setting.
+# delete what the queue already delivered, typing presence, lookups —
+# plus sendMessage: menu-driven proxied bots need it with parse_mode
+# and reply_markup, which the queue's plain-text path cannot carry.
+# The rest of the send* family stays with the queue (the anti-double
+# consumer contract); the banned list is a code constant, never a setting.
 DEFAULT_TELEGRAM_PROXY_ALLOWED_METHODS = (
-    "getMe,answerCallbackQuery,answerInlineQuery,answerWebAppQuery,"
+    "getMe,sendMessage,answerCallbackQuery,answerInlineQuery,answerWebAppQuery,"
     "sendChatAction,editMessageText,editMessageCaption,"
     "editMessageReplyMarkup,editMessageLiveLocation,stopMessageLiveLocation,"
     "deleteMessage,getChat,getChatMember"
